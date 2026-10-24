@@ -65,7 +65,7 @@ PLATFORM = create_platform()
 PLATFORM.setup_process()
 cv2.setNumThreads(1)
 
-VERSION = "0.9.13-beta"
+VERSION = "0.9.14-beta"
 WINDOW_TITLE = "Maple Classic Exp Overlay"    # the version is shown in Settings
 OLD_TITLES = ("Maple EXP/hr",)               # what versions before 0.9.3 were called
 
@@ -1217,7 +1217,9 @@ class ScreenReader:
         self.last_rect = rect
         if self.mode == "region":
             reading = self._read_region(sct, rect)
-        elif not self.hwnd and PLATFORM.missing_permission():
+        elif PLATFORM.missing_permission():
+            # (also when the game window was found, by its program's name: without the permission
+            # the screenshots don't have the game in them, only the desktop)
             return Reading(PLATFORM.missing_permission())
         elif not self.hwnd:
             return Reading("MapleStory window not found. Is the game running?")

@@ -45,7 +45,14 @@ You need a Mac with Apple Silicon (M1 or newer) and macOS 14 (Sonoma) or newer, 
 3. Open it. macOS will say it can't check the app for malware, because it isn't from a registered Apple developer: click **Done**, then open **System Settings > Privacy & Security**, scroll down, and click **Open Anyway** next to Maple Classic Exp Overlay. You only need to do this once.
 4. It asks to record your screen (that's how it reads the game). Click **Open System Settings**, switch **Maple Classic Exp Overlay** on under **Screen Recording**, then open the app again.
 
-After an update, macOS may ask for Screen Recording again: switch it off and on for the new version. **Hotkeys aren't available on a Mac yet**, so use the buttons. Everything else works as on Windows. The Mac version hasn't been tried with the game by this repository's owner, so please [say how it goes](../../issues).
+**It closes right away, or Terminal says "killed"?** macOS can stop an app that isn't from a registered Apple developer before it starts (it then leaves no logs). Open **Terminal** and run these two lines, which take away the "downloaded from the internet" mark and sign your copy again on your Mac, then open it as usual:
+
+```
+xattr -cr "/Applications/Maple Classic Exp Overlay.app"
+codesign --force --deep --sign - "/Applications/Maple Classic Exp Overlay.app"
+```
+
+**Update now** does this by itself after each update. After an update, macOS may ask for Screen Recording again: switch it off and on for the new version. **Hotkeys aren't available on a Mac yet**, so use the buttons. Everything else works as on Windows. The Mac version hasn't been tried with the game by this repository's owner, so please [say how it goes](../../issues).
 
 ## How to use it
 
