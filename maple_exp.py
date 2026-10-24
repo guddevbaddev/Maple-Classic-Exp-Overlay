@@ -1217,7 +1217,9 @@ class ScreenReader:
         self.last_rect = rect
         if self.mode == "region":
             reading = self._read_region(sct, rect)
-        elif not self.hwnd and PLATFORM.missing_permission():
+        elif PLATFORM.missing_permission():
+            # (also when the game window was found, by its program's name: without the permission
+            # the screenshots don't have the game in them, only the desktop)
             return Reading(PLATFORM.missing_permission())
         elif not self.hwnd:
             return Reading("MapleStory window not found. Is the game running?")
