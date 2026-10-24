@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.14-beta
+
+**Fixed**
+- **Mac:** macOS could stop the app the moment it started ("killed" in Terminal, no window and no logs), because of how it judges an app that isn't from a registered Apple developer once it's been downloaded. Update now now takes away the "downloaded" mark and signs the app again on your Mac after putting the new version in, so updated copies start. For a copy downloaded by hand, the README's "On a Mac" section has the two Terminal lines that do the same.
+
 ## 0.9.13-beta
 
 **New**
