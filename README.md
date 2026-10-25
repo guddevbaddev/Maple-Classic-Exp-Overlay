@@ -40,19 +40,28 @@ You need Windows 10 or 11 (on a Mac, see [On a Mac](#on-a-mac)). It takes about 
 
 You need a Mac with Apple Silicon (M1 or newer) and macOS 14 (Sonoma) or newer, with MapleStory running through CrossOver, Whisky, Parallels or a game stream.
 
-1. On the **[download page](../../releases/latest)**, under **Assets**, click the file ending in **-mac.zip** (for example `Maple-Classic-Exp-Overlay-v0.9.11-beta-mac.zip`).
-2. Double-click the zip in your Downloads folder to unpack it, and drag **Maple Classic Exp Overlay** (the app) into your **Applications** folder.
-3. Open it. macOS will say it can't check the app for malware, because it isn't from a registered Apple developer: click **Done**, then open **System Settings > Privacy & Security**, scroll down, and click **Open Anyway** next to Maple Classic Exp Overlay. You only need to do this once.
-4. It asks to record your screen (that's how it reads the game). Click **Open System Settings**, switch **Maple Classic Exp Overlay** on under **Screen Recording**, then open the app again.
+1. On the **[download page](../../releases/latest)**, under **Assets**, click the file ending in **-mac.zip**.
+2. Double-click the zip in your Downloads folder to unpack it, and drag **Maple Classic Exp Overlay** (the app) into your **Applications** folder. (If you had an older copy, delete it first rather than replacing it.)
+3. Open **Terminal** (press Cmd+Space, type Terminal, press Enter), paste these two lines and press Enter. They take away the "downloaded from the internet" mark and sign the app on your Mac, so macOS lets it start (without them it can close the moment it opens, with no message):
 
-**It closes right away, or Terminal says "killed"?** macOS can stop an app that isn't from a registered Apple developer before it starts (it then leaves no logs). Open **Terminal** and run these two lines, which take away the "downloaded from the internet" mark and sign your copy again on your Mac, then open it as usual:
+   ```
+   xattr -cr "/Applications/Maple Classic Exp Overlay.app"
+   codesign --force --deep --sign - "/Applications/Maple Classic Exp Overlay.app"
+   ```
+4. Open the app from Applications. If macOS says it can't check it for malware (it isn't from a registered Apple developer): click **Done**, open **System Settings > Privacy & Security**, scroll down, and click **Open Anyway** next to Maple Classic Exp Overlay.
+5. **Let it see the game (Screen Recording).** That's how it reads your EXP. Open **System Settings > Privacy & Security > Screen Recording** (on newer macOS: **Screen & System Audio Recording**):
+   - If **Maple Classic Exp Overlay** is in the list already, select it and click **–** to remove it (an entry from an older copy doesn't work for this one).
+   - Click **+**, choose **Maple Classic Exp Overlay** in Applications, and make sure its switch is **on**.
+   - Quit the overlay with **Cmd+Q** and open it again. (macOS only applies the permission when the app starts.)
 
-```
-xattr -cr "/Applications/Maple Classic Exp Overlay.app"
-codesign --force --deep --sign - "/Applications/Maple Classic Exp Overlay.app"
-```
+**Hotkeys aren't available on a Mac yet**, so use the buttons. Everything else works as on Windows.
 
-**Update now** does this by itself after each update. After an update, macOS may ask for Screen Recording again: switch it off and on for the new version. **Hotkeys aren't available on a Mac yet**, so use the buttons. Everything else works as on Windows. The Mac version hasn't been tried with the game by this repository's owner, so please [say how it goes](../../issues).
+#### If something's wrong on a Mac
+
+- **It closes right away, or Terminal says "killed":** do step 3 again.
+- **The timer starts, then pauses ("no EXP for 15 seconds") even while you're killing monsters, or Details > Current never changes:** it can't see the game. Do step 5 again: remove it from Screen Recording with **–**, add it back with **+**, then Cmd+Q and open it again. Switching it off and on isn't always enough.
+- **After an update:** **Update now** does step 3 by itself, but macOS may want step 5 again for the new version.
+- **Still not working:** ⚙ > **Save logs**, and attach the zip to a [bug report](../../issues).
 
 ## How to use it
 

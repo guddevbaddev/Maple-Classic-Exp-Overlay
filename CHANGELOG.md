@@ -4,6 +4,7 @@
 
 **Fixed**
 - **Mac:** macOS could stop the app the moment it started ("killed" in Terminal, no window and no logs), because of how it judges an app that isn't from a registered Apple developer once it's been downloaded. Update now now takes away the "downloaded" mark and signs the app again on your Mac after putting the new version in, so updated copies start. For a copy downloaded by hand, the README's "On a Mac" section has the two Terminal lines that do the same.
+- **Mac:** if the overlay has no Screen Recording permission, it now says so (it could find the game window anyway and only paused for "no EXP"). The README's "On a Mac" now goes through it step by step: remove the old entry with –, add the app with +, then Cmd+Q and open it again.
 
 ## 0.9.13-beta
 
