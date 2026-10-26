@@ -544,6 +544,27 @@ app.update_win.destroy()
 m.updater.installed_location, m.updater.prepare, m.updater.start_install, app.close = (real_where, real_prepare,
                                                                                         real_install, real_close)
 
+# ---- high levels: the EXP bar shows only the %, so the level is asked once and counted up after
+asked, real_ask = [], m.simpledialog.askinteger
+m.simpledialog.askinteger = lambda *a, **k: (asked.append(k), 62)[1]
+app.meso.reset()
+app.cfg["level"], app.asked_level, app.tracker.req = 0, False, None
+pct = lambda p: m.Reading(where="MapleStory window 1920x1080", confident=True, text=f"[{p:.2f}%]", pct=p)
+app._handle(pct(88.50))
+root.update()
+check(f"a %-only bar asks the level once ({len(asked)})", len(asked) == 1 and app.cfg["level"] == 62)
+check("...and keeps it", json.loads(m.CONFIG_PATH.read_text())["level"] == 62)
+app.tracker.start()
+for p in (88.50, 88.50, 88.60, 99.99, 0.05, 0.07):
+    app._handle(pct(p))
+root.update()
+check(f"...knows Lv {app.level} after a level-up, and remembers it", app.level == 63 and app.cfg["level"] == 63 and len(asked) == 1)
+check("...and has the menu item to change it", app.pct_only)
+app._handle(m.Reading(where="MapleStory window 1920x1080", candidates=[(68601, 71.68)], confident=True))
+check("a bar with the number again isn't %-only", not app.pct_only)
+app.tracker.reset()
+m.simpledialog.askinteger = real_ask
+
 check("the typeface is the bundled one, or it fell back cleanly", app._own_fonts in (True, False) and bool(app.theme.fam["extra"]))
 app.close()
 

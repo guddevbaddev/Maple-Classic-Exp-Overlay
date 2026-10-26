@@ -193,7 +193,10 @@ else
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] update failed" >> "$log"
   rm -rf "$app"; mv "$app.old" "$app"
 fi
-xattr -dr com.apple.quarantine "$app" 2>/dev/null
+# Signed again here, as macOS sees it on this Mac (it can stop an app copied in from elsewhere on
+# sight, "killed", before it runs a line). The download's SHA-256 was checked before any of this.
+xattr -cr "$app" 2>/dev/null
+codesign --force --deep --sign - "$app" >/dev/null 2>&1 || echo "[$(date '+%Y-%m-%d %H:%M:%S')] couldn't sign the app again" >> "$log"
 if [ "$relaunch" = "1" ]; then open "$app"; fi
 rm -rf "$cleanup"
 rm -f "$0"
