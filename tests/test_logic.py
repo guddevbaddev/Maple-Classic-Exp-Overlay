@@ -604,6 +604,7 @@ check(f"misread EXP never inflates the gain (worst over-count {worst:.1%})", wor
 
 # ---- reading the real EXP bar, captured at different game resolutions
 import cv2  # noqa: E402
+import numpy as np  # noqa: E402
 tpl = m.DigitTemplates.load()
 for f in sorted((Path(__file__).parent / "frames").glob("exp_*.png")):
     lay = m.find_exp(cv2.imread(str(f)))
@@ -620,6 +621,61 @@ tr.observe([(1, 71.68)], False)
 tr.observe([(1, 71.68)], False)
 check("an untrusted reading doesn't set the level", tr.req is None)
 check("'1 [71.68%]' (digits cut off) fits no level, so it isn't trusted", not m.fits_exp_table(1, 71.68))
+
+
+# ---- high levels: the bar shows only the % ("EXP. [88.50%]"), no EXP number
+def pct_only(img, lay):
+    """The same bar with the EXP number taken out and the [..%] moved up to where it was, as
+    the game draws it from about level 58. The end is filled from just left of the number."""
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    green = (hsv[..., 1] >= 90) & (hsv[..., 2] >= 110) & (hsv[..., 0] >= 26) & (hsv[..., 0] <= 50)
+    row = green[int(lay.cy - lay.gh / 2):int(lay.cy + lay.gh / 2)].any(axis=0)
+    x0 = lay.box[0]
+    x1 = int(np.argmax(row[x0:])) + x0                   # the '['
+    out = img.copy()
+    seg = img[:, x1 - 2:]
+    out[:, x0 - 2:x0 - 2 + seg.shape[1]] = seg
+    out[:, x0 - 2 + seg.shape[1]:] = img[:, x0 - 3:x0 - 2]
+    return out
+
+for f in sorted((Path(__file__).parent / "frames").glob("exp_*.png")):
+    img = cv2.imread(str(f))
+    shown = pct_only(img, m.find_exp(img))
+    lay = m.find_exp(shown)
+    got = m.read_pct(tpl, lay) if lay and not lay.exp else None
+    check(f"reads a %-only EXP bar at {f.stem[4:]} ({got})", got == 71.68)
+    # Without the '%' it could be HP or MP ("HP[1297/1838]"): never taken for EXP.
+    no_pct = shown.copy()
+    if lay:
+        wide = lay.pct[-1]
+        a, b = int(wide[0] - wide[1] / 2 - 1), int(wide[0] + wide[1] / 2 + 2)
+        no_pct[:, a:b] = shown[:, a - 4:a - 3]
+    check(f"...and brackets without a '%' aren't taken for EXP at {f.stem[4:]}", m.find_exp(no_pct) is None)
+
+check("% only: EXP worked out at the level, and at the next (Lv 62 needs 1,346,242)",
+      m.pct_candidates(88.5, 62) == [(1191424, 88.5), (1256714, 88.5)])
+check("% only: level 99 has no next level", len(m.pct_candidates(50.0, 99)) == 1)
+tr = m.ExpTracker()
+tr.start()
+tr.set_level(62)
+need = m.EXP_TABLE[61]
+seq = [88.50, 88.50, 88.51, 88.53, 88.53, 88.60, 99.98, 0.02, 0.04, 0.10, 0.15]
+notes = [tr.observe(m.pct_candidates(p, 62 + tr.levels), True)[1] for p in seq]
+check(f"% only: gains count, and a level-up is seen ({', '.join(n for n in notes if n)})",
+      tr.levels == 1 and m.level_for_req(tr.req) == 63 and "LEVEL UP!" in notes)
+expect = round((100 - 88.50) / 100 * need) + round(0.15 / 100 * m.EXP_TABLE[62])     # (to the end of the level)
+check(f"% only: EXP gained adds up ({tr.gained:,} vs {expect:,})", abs(tr.gained - expect) <= 0.0002 * need)
+check(f"% only: % of a level gained is exact ({tr.pct_gained:.2f})", abs(tr.pct_gained - (100 - 88.50 + 0.15)) < 0.001)
+tr = m.ExpTracker()
+tr.start()
+tr.set_level(62)
+for p in (50.0, 50.0, 50.2, 45.2, 45.2, 45.3):
+    note = tr.observe(m.pct_candidates(p, 62), True)[1]
+check(f"% only: dying isn't taken off the gains ({tr.gained:,}, {tr.deaths} death)",
+      tr.deaths == 1 and abs(tr.gained - round(0.3 / 100 * need)) <= 2)
+tr.set_level(61)
+check("% only: a corrected level starts counting afresh (no gain from the change)",
+      tr.observe(m.pct_candidates(45.3, 61), True)[1] == "baseline" and m.level_for_req(tr.req) == 61)
 
 # ---- pausing by itself (a fake clock, so these run instantly)
 clock = [10000.0]

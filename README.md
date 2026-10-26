@@ -105,6 +105,16 @@ A party quest goes through several maps, and a stage can go minutes without EXP 
 
 It turns itself off when you close the overlay, so your normal farming isn't affected if you forget. To turn it off sooner, choose **PQ mode: on** in the menu again.
 
+### High levels: an EXP bar with only a %
+
+From about level 58 the game stops showing the EXP number and shows only the %, like `EXP. [88.50%]`. The overlay reads that too. The % alone doesn't say how much EXP that is, so the first time it sees it, it asks **what level you are** (if it saw your level before the number went away, it already knows and doesn't ask). From then on:
+
+- It works out your EXP from the % and the EXP your level needs, so EXP/hr, time to level, the log and the share card all work as before.
+- It counts your level up by itself each time you level up, and remembers it for next time.
+- Wrong level? Choose **Set your level...** in the **...** menu.
+
+The bar shows the % to two decimals, so at high levels each step is a bit over 100 EXP: single kills can add up in small jumps, but over a few minutes the numbers are just as right. The **% of a level per hour** doesn't depend on the level at all.
+
 ### Sharing your session
 
 Click **Share** (bottom right) to show off how your farming is going. It makes a picture card in the overlay's gold-and-dark look with:
@@ -167,7 +177,7 @@ Click **>** at the top right of the overlay to open the log. It's the table on t
 
 It double-checks everything it reads before counting it:
 
-- **EXP:** the number and the % have to agree with each other, and with the EXP your level needs.
+- **EXP:** the number and the % have to agree with each other, and with the EXP your level needs. (At high levels the bar shows only the %, which is read the same careful way.)
 - **Mesos:** a new amount has to show up in several readings in a row.
 - **Sudden jumps:** an EXP jump or a level-up has to be confirmed before it counts. A mesos amount that looks like an extra or missing digit is ignored.
 - **Dying:** the EXP you lose isn't taken off your EXP/hr. It says how much you lost, then carries on from there.

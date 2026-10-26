@@ -102,7 +102,7 @@ OUTLINE_EAGER = 3           # ...in the first minute after starting or Reset, wh
 EAGER_SECONDS = 60          # opened (about 60-170 ms a search, at 900p-1440p)
 DEFAULTS = {"gap_seconds": 15, "transparency": 0, "topmost": True,
             "check_updates": True, "skip_version": "", "ui_scale": 100, "compact": False, "hotkeys_on": True,
-            "details": False}
+            "details": False, "level": 0}       # level: for a bar that shows only the % (0: unknown)
 # Settings > Size, in %: only these, so the window can't get too small to read or use.
 UI_SCALES = (60, 70, 80, 90, 100, 110, 125, 150, 175, 200)
 MAX_TRANSPARENCY = 40       # %: more and the window can fade out of sight, with Settings in it
@@ -231,6 +231,8 @@ def load_config():
     cfg["transparency"] = min(MAX_TRANSPARENCY, max(0, cfg["transparency"]))
     if cfg["ui_scale"] not in UI_SCALES:
         cfg["ui_scale"] = 100
+    if not 0 <= cfg["level"] <= len(EXP_TABLE):
+        cfg["level"] = 0
     keys = cfg.get("hotkeys") if isinstance(cfg.get("hotkeys"), dict) else {}
     cfg["hotkeys"] = {a: keys[a] if a in keys and (keys[a] == "" or parse_hotkey(keys[a])) else k
                       for a, k in DEFAULT_HOTKEYS.items()}            # "" is a hotkey turned off
@@ -430,7 +432,14 @@ def find_exp(bgr):
             run.append(b)
             edge = b.x
         if not run:
-            continue                                          # HP/MP: label before '['
+            # From about level 58 the bar shows only "EXP. [88.50%]". Brackets with a '%' just
+            # before the ']' are that; HP and MP ("HP[1297/1838]") never have one.
+            heights = [b.h for b in inside if b.w <= 0.85 * b.h]
+            gh = float(np.median(heights)) if heights else float(bh)
+            cells = _cells(inside, gh)
+            if cells[-1][2] == "wide" and sum(k == "digit" for _, _, k in cells) >= 3:
+                found.append(Layout(gh, cy, [], cells, (o.x, int(cy - bh), c.x + c.w, int(cy + bh)), V))
+            continue
         run.reverse()
         heights = [b.h for b in run + inside if b.w <= 0.85 * b.h]
         gh = float(np.median(heights)) if heights else float(bh)
@@ -526,6 +535,21 @@ def read_layout(tpl, lay):
     return int(exp_s), int(pct_s) / 100          # the game always shows 2 decimals
 
 
+def read_pct(tpl, lay):
+    """The % of a bar that shows only that ("EXP. [88.50%]"), or None if any digit is unclear."""
+    pct_s = _read_digits(tpl, lay, _pct_cells(lay))
+    if not pct_s or not 3 <= len(pct_s) <= 4 or (len(pct_s) > 3 and pct_s[0] == "0"):
+        return None
+    return int(pct_s) / 100
+
+
+def pct_candidates(pct, level):
+    """(exp, pct) for a bar that shows only the %, worked out from the EXP table: at this
+    level, and at the next one (so a level-up shows as the % going back near 0)."""
+    levels = [lv for lv in (level, level + 1) if 1 <= lv <= len(EXP_TABLE)]
+    return [(round(pct / 100 * EXP_TABLE[lv - 1]), pct) for lv in levels]
+
+
 def _ocr_cells(bgr, lay, cells):
     """Tesseract on the area covering cells, two ways. Returns digit strings."""
     if not cells:
@@ -554,6 +578,17 @@ def tesseract_candidates(bgr, lay):
     pcts = {int(s) / 100 for s in _ocr_cells(bgr, lay, _pct_cells(lay))
             if 3 <= len(s) <= 5}
     return [(e, p) for e in sorted(exps) for p in sorted(pcts)]
+
+
+def tesseract_pct(bgr, lay):
+    """Fallback for a bar that shows only the %: Tesseract's reading, if both ways agree.
+    (With no EXP number there's nothing to check a % against, so it has to be sure.)"""
+    if not tesseract_ok:
+        return None
+    texts = _ocr_cells(bgr, lay, _pct_cells(lay))
+    if len(texts) == 2 and texts[0] == texts[1] and 3 <= len(texts[0]) <= 4:
+        return int(texts[0]) / 100
+    return None
 
 
 def build_templates(samples, scales=(1.0, 0.75, 0.55, 0.4, 0.3), path=TEMPLATE_PATH):
@@ -1122,9 +1157,10 @@ def find_party_bars(bgr, gh, hsv=None):
 
 # --------------------------------------------------------------------------- finding it on screen
 
+# pct: the % of a bar that shows only that (high levels); the App turns it into candidates
 Reading = namedtuple("Reading", "where candidates confident text image boxes map note "
-                                 "mesos mesos_image mesos_boxes party mesos_at",
-                     defaults=((), False, "", None, (), None, None, None, None, (), None, None))
+                                 "mesos mesos_image mesos_boxes party mesos_at pct",
+                     defaults=((), False, "", None, (), None, None, None, None, (), None, None, None))
 
 
 def _view(img, lay):
@@ -1384,6 +1420,15 @@ class ScreenReader:
         if not lay:
             return Reading(_problem(where, "Can't find the EXP bar.")), None
         view, boxes = _view(img, lay)
+        if not lay.exp:                     # only the % (high levels): EXP comes from the level
+            p = read_pct(self.templates, lay) if self.templates else None
+            confident = p is not None
+            if p is None:
+                p = tesseract_pct(img, lay)
+            if p is None:
+                return Reading(_problem(where, "Found the EXP bar, but can't read its % clearly."),
+                               image=view, boxes=boxes), lay
+            return Reading(where, [], confident, f"[{p:.2f}%]", view, boxes, pct=p), lay
         got = read_layout(self.templates, lay) if self.templates else None
         if got and fits_exp_table(*got):
             return Reading(where, [got], True, f"{got[0]:,} [{got[1]:.2f}%]", view, boxes), lay
@@ -1703,6 +1748,17 @@ class ExpTracker:
         if level and level == self._table_level:
             self.req, self._req_exact = EXP_TABLE[level - 1], True
         self._table_level = level
+
+    def set_level(self, level):
+        """The level, when it's known some other way (a bar that shows only the %). EXP is
+        counted from the next reading on, so a corrected level isn't taken as a gain."""
+        self.req, self._req_exact = EXP_TABLE[level - 1], True
+        self._table_level = self._pending = self._pending_lvl = self._level_start = None
+        self._prev_req = None
+        self.exp = self.pct = None
+        self._seen.clear()
+        self._recent.clear()
+        self._misfits = 0
 
     def _consistent(self, e, p):
         return abs(e / self.req * 100 - p) <= 0.02 + 0.003 * p
@@ -2721,6 +2777,8 @@ class App:
         self.note = None
         self.last_logged = None
         self.skip_log = False               # "Don't log" is on: this run isn't logged
+        self.pct_only = False               # the EXP bar shows only the % (high levels)
+        self.asked_level = False
         self.pq_mode = False                # PQ mode (the ... menu): changing maps doesn't reset
         self.job = None                     # the class, from the status bar
         self.map_read = None                # the map name exactly as read
@@ -2825,7 +2883,34 @@ class App:
         PopupMenu(self.theme, anchor, [
             ("Follow the game" if self.reader.mode == "region" else "Select area", None, self.toggle_area),
             ("View capture", None, self.view_capture),
-            ("PQ mode: on" if self.pq_mode else "PQ mode: off", None, self.toggle_pq)])
+            ("PQ mode: on" if self.pq_mode else "PQ mode: off", None, self.toggle_pq)]
+            + ([("Set your level...", None, self.ask_level)] if self.pct_only else []))
+
+    def ask_level(self):
+        """Asks the level, for an EXP bar that shows only the %. Kept, and counted up at each level-up."""
+        self.asked_level = True
+        level = simpledialog.askinteger(
+            "Your level", "Your EXP bar only shows a %, so the overlay works out your EXP from your level.\n\n"
+            "What level are you? (It counts up by itself when you level up.)",
+            parent=self.root, minvalue=1, maxvalue=len(EXP_TABLE), initialvalue=self.cfg["level"] or None)
+        if level:
+            self.cfg["level"] = level
+            save_config(self.cfg)
+            self.tracker.set_level(level)
+            self.level = level
+            log_activity(f"Level set to {level} (EXP bar shows only %)")
+
+    def _pct_candidates(self, pct):
+        """(exp, pct) guesses for a bar that shows only the %, from the level (asked once)."""
+        level = self.cfg["level"]
+        if not level:
+            if not self.asked_level:
+                self.asked_level = True
+                self.root.after(0, self.ask_level)
+            return []
+        if level_for_req(self.tracker.req) != level:
+            self.tracker.set_level(level)
+        return pct_candidates(pct, level)
 
     def toggle_pq(self):
         """PQ mode: for party quests, which go through several maps. The numbers carry on from
@@ -3761,11 +3846,19 @@ class App:
             self.session.map_seen(self.map_name)
             self._after_pause_check(waiting)
         self.note = r.note
-        if r.candidates:
+        cands = r.candidates
+        if r.pct is not None:
+            if not self.pct_only:
+                log_activity("The EXP bar shows only the %")
+            self.pct_only = True
+            cands = self._pct_candidates(r.pct)
+        elif cands:
+            self.pct_only = False
+        if cands:
             if self.found_at is None or t.req is not None:
                 self.found_at = now
             before = t.gained
-            ok, note = self.session.observe(r.candidates, r.confident, now)
+            ok, note = self.session.observe(cands, r.confident, now)
             self.rejected = 0 if ok else self.rejected + 1
             if self.rejected >= 10:                 # keeps not adding up: find the EXP bar again
                 self.reader.box, self.rejected = None, 0
@@ -3778,6 +3871,9 @@ class App:
                 if self.level:
                     self.level += 1             # until the new level's EXP confirms it
             status = self._status_for(note)
+        elif r.pct is not None:
+            status = ("Your EXP bar only shows the %, so the overlay needs your level: "
+                      "... menu > Set your level.")
         else:
             status = r.where
         if self.note:
@@ -3785,6 +3881,9 @@ class App:
         self.status.set(status)
         self.recent.add(status)
         self.level = level_for_req(t.req) or self.level
+        if t.req and self.level and self.level != self.cfg["level"]:
+            self.cfg["level"] = self.level      # (for when the bar starts showing only the %)
+            save_config(self.cfg)
         self._log_tick(now)
 
     def _status_for(self, note):
