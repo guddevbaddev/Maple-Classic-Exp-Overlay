@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.15-beta
+
+**New**
+- **Settings > Pause the timer when no EXP comes in:** turn it off and the timer keeps running when you stop killing (picking up drops, gathering items), without jumping back, until you press Pause. On (as before), it pauses after the time you set and takes that idle time back off the clock.
+
 ## 0.9.14-beta
 
 **New**

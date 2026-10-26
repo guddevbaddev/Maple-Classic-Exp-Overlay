@@ -738,6 +738,15 @@ s.start(clock[0])
 gains(s, 9.5)
 idle(s, 40)
 check("the pause time can be changed in Settings (60 s: a 40 s break doesn't pause)", s.exp.running)
+s = session()
+s.auto_pause = False                                     # Settings: "Pause the timer when no EXP comes in" off
+s.start(clock[0])
+gains(s, 30)
+idle(s, 120)                                             # picking up drops, no kills
+check(f"with auto-pause off, the timer keeps going without EXP, no rewind ({s.exp.elapsed():.0f} s)",
+      s.exp.running and s.waiting is None and abs(s.exp.elapsed() - 150) < 0.6)
+gains(s, 3.5)
+check(f"...and the next kill counts as usual (gained {s.exp.gained})", s.exp.gained == 1100)
 
 # PQ mode: a party quest goes through several maps, with stages that give no EXP until cleared
 s = session()

@@ -65,7 +65,7 @@ PLATFORM = create_platform()
 PLATFORM.setup_process()
 cv2.setNumThreads(1)
 
-VERSION = "0.9.14-beta"
+VERSION = "0.9.15-beta"
 WINDOW_TITLE = "Maple Classic Exp Overlay"    # the version is shown in Settings
 OLD_TITLES = ("Maple EXP/hr",)               # what versions before 0.9.3 were called
 
@@ -102,7 +102,7 @@ OUTLINE_EAGER = 3           # ...in the first minute after starting or Reset, wh
 EAGER_SECONDS = 60          # opened (about 60-170 ms a search, at 900p-1440p)
 DEFAULTS = {"gap_seconds": 15, "transparency": 0, "topmost": True,
             "check_updates": True, "skip_version": "", "ui_scale": 100, "compact": False, "hotkeys_on": True,
-            "details": False, "level": 0}       # level: for a bar that shows only the % (0: unknown)
+            "details": False, "level": 0, "auto_pause": True}       # level: for a bar that shows only the % (0: unknown)
 # Settings > Size, in %: only these, so the window can't get too small to read or use.
 UI_SCALES = (60, 70, 80, 90, 100, 110, 125, 150, 175, 200)
 MAX_TRANSPARENCY = 40       # %: more and the window can fade out of sight, with Settings in it
@@ -2064,6 +2064,7 @@ class Session:
         self.here = None            # the map you're on now
         self.last_gain = None
         self.pq = False             # PQ mode: maps don't matter, and idle means PQ_GAP
+        self.auto_pause = True      # pause by itself after idle_gap without EXP (Settings)
 
     @property
     def idle_gap(self):
@@ -2129,7 +2130,7 @@ class Session:
 
     def tick(self, now):
         """Call regularly: pauses after `gap` seconds without EXP."""
-        if self.on and self.exp.running and now - self.last_gain > self.idle_gap:
+        if self.auto_pause and self.on and self.exp.running and now - self.last_gain > self.idle_gap:
             self._wait("idle")
 
 
@@ -2764,6 +2765,7 @@ class App:
         if isinstance(saved, list) and len(saved) == 6:
             self.reader.saved_mesos = tuple(saved)
         self.session = Session(self.cfg["gap_seconds"])
+        self.session.auto_pause = self.cfg["auto_pause"]
         self.tracker, self.meso = self.session.exp, self.session.meso
         self.party = 1
         self._party_seen = (None, 0)
@@ -3383,6 +3385,8 @@ class App:
         wrap = px(380)
 
         self._section(body, "Tracking", first=True)
+        auto_pause = tk.BooleanVar(value=bool(self.cfg["auto_pause"]))
+        self._switch(body, "Pause the timer when no EXP comes in", auto_pause).pack(anchor="w", pady=(0, px(10)))
         gap = tk.StringVar(value=str(self.cfg["gap_seconds"]))
         line = tk.Frame(body, bg=BG)
         line.pack(fill="x")
@@ -3454,6 +3458,7 @@ class App:
             self.cfg["transparency"] = min(MAX_TRANSPARENCY, max(0, int(float(transparency.get()))))
             self.cfg["topmost"] = bool(topmost.get())
             self.cfg["check_updates"] = bool(updates.get())
+            self.cfg["auto_pause"] = self.session.auto_pause = bool(auto_pause.get())
             self._apply_window_settings()
             w.attributes("-topmost", self.cfg["topmost"])
             scale = int(size.get().rstrip("%"))
@@ -3463,7 +3468,7 @@ class App:
                 self.root.after(60, self._reopen_settings)        # (drawn again at the new size)
             save_config(self.cfg)
 
-        for var in (gap, transparency, topmost, updates, size):
+        for var in (auto_pause, gap, transparency, topmost, updates, size):
             var.trace_add("write", apply)
         self._hotkey_settings(body)
         buttons = tk.Frame(body, bg=BG)
