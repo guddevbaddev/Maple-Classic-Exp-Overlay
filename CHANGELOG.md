@@ -3,6 +3,7 @@
 ## 0.9.14-beta
 
 **Fixed**
+- **Mesos found sooner:** for the first minute after you start the overlay (or press Reset), it looks for a see-through inventory every 3 seconds instead of every 8, so opening the inventory then gets the mesos going sooner. While it has found the inventory but is still confirming the number, it says "reading..." instead of "open inventory". overlay.log notes when the inventory was found and when the mesos were first read.
 - **Mac:** macOS could stop the app the moment it started ("killed" in Terminal, no window and no logs), because of how it judges an app that isn't from a registered Apple developer once it's been downloaded. Update now now takes away the "downloaded" mark and signs the app again on your Mac after putting the new version in, so updated copies start. For a copy downloaded by hand, the README's "On a Mac" section has the two Terminal lines that do the same.
 - **Mac:** if the overlay has no Screen Recording permission, it now says so (it could find the game window anyway and only paused for "no EXP"). The README's "On a Mac" now goes through it step by step: remove the old entry with –, add the app with +, then Cmd+Q and open it again.
 

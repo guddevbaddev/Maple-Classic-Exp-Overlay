@@ -98,6 +98,8 @@ MESOS_START_PATH = ASSETS / "mesos_digits.npz"          # ...starting from these
 MESOS_BOX_PATH = ASSETS / "mesos_box.npz"
 SCAN_SECONDS = 4            # how often the whole window is checked for the inventory and party
 OUTLINE_SECONDS = 8         # how often the (costly) search for a see-through mesos box may run
+OUTLINE_EAGER = 3           # ...in the first minute after starting or Reset, when the inventory is likely
+EAGER_SECONDS = 60          # opened (about 60-170 ms a search, at 900p-1440p)
 DEFAULTS = {"gap_seconds": 15, "transparency": 0, "topmost": True,
             "check_updates": True, "skip_version": "", "ui_scale": 100, "compact": False, "hotkeys_on": True,
             "details": False}
@@ -1173,6 +1175,7 @@ class ScreenReader:
         self.mesos_covered = False  # this app's window is in the way of the mesos
         self.two_boxes = False      # a storage / trade window shows a second mesos box
         self.next_outline = 0.0     # the earliest time to search for a see-through mesos box again
+        self.eager_until = time.monotonic() + EAGER_SECONDS   # until then, search for it more often
         self.party_area = None      # where the party list was last seen, on screen
         self.next_scan = 0.0
         self.own_rect = None        # this app's window, which screenshots can't see through
@@ -1206,6 +1209,7 @@ class ScreenReader:
         self.mesos_fails, self.mesos_count, self.mesos_pending = 0, None, (None, 0)
         self.mesos_covered, self.party_area, self.next_scan = False, None, 0.0
         self.two_boxes, self.next_outline = False, 0.0
+        self.eager_until = time.monotonic() + EAGER_SECONDS
         self.exp_anchor, self.next_job_read = None, 0.0
         self.request_map()
 
@@ -1418,8 +1422,8 @@ class ScreenReader:
                 if (field is None and not self.two_boxes and now >= self.next_outline
                         and (self.mesos_box is None or self.mesos_fails >= 10 or self.mesos_covered)):
                     field = self._find_seethrough_box(img, g, hsv)
-                    if field is None:
-                        self.next_outline = now + OUTLINE_SECONDS   # (it costs a lot on a big screen)
+                    if field is None:                 # (it costs a lot on a big screen)
+                        self.next_outline = now + (OUTLINE_EAGER if now < self.eager_until else OUTLINE_SECONDS)
                 if self.two_boxes:
                     self.mesos_box = None
                 if field:
@@ -3731,11 +3735,16 @@ class App:
         if r.mesos_image is not None:
             self.last_mesos = r
         if r.mesos_at:                                  # remember where the mesos box is
+            if self.reader.saved_mesos is None or self.meso.value is None:
+                log_activity("Found the inventory's mesos box")
             self.cfg["mesos_box"] = list(r.mesos_at)
             self.reader.saved_mesos = tuple(r.mesos_at)
             save_config(self.cfg)
         if r.mesos is not None:
+            had = self.meso.value
             self.meso.observe(r.mesos, now, t.elapsed(), t.running)
+            if had is None and self.meso.value is not None:
+                log_activity(f"Mesos read: {fmt_num(self.meso.value)}")
         if r.party is not None:                         # believe a new party size once seen twice
             seen, n = self._party_seen
             n = n + 1 if r.party == seen else 1
@@ -3862,7 +3871,8 @@ class App:
             self._trend_at = now
         m, el = self.meso, t.elapsed()
         if m.value is None:
-            mesos = "move this window" if self.reader.mesos_covered else "open inventory"
+            mesos = ("move this window" if self.reader.mesos_covered
+                     else "reading..." if self.reader.mesos_box else "open inventory")
         else:
             mesos = fmt_num(m.value) + (f"  (+{fmt_short(m.gained)})" if m.gained > 0 else "")
         state, state_text = self._state()

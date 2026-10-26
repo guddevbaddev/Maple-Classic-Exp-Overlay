@@ -157,6 +157,7 @@ try:
     def look(image):
         reader.next_scan = 0.0
         return reader._read_extras(FakeScreen(image), (0, 0, image.shape[1], image.shape[0]), blank)
+    reader.eager_until = 0.0                                    # (after the first minute)
     for _ in range(12):                                         # 24 s of nothing to find
         look(empty)
         clock[0] += 2
@@ -171,6 +172,22 @@ try:
             found_after = 2 * i
     check(f"a see-through inventory is still found, within {m.OUTLINE_SECONDS + 4} s of opening it (took {found_after} s)",
           found_after is not None and found_after <= m.OUTLINE_SECONDS + 4)
+    searches.clear()                                            # in the first minute after starting
+    reader.mesos_box, reader.eager_until = None, clock[0] + m.EAGER_SECONDS
+    reader.next_outline = clock[0] + m.OUTLINE_EAGER
+    for _ in range(6):
+        look(empty)
+        clock[0] += 2
+    check(f"in the first minute it looks for a see-through inventory every {m.OUTLINE_EAGER} s ({len(searches)} in 12 s)",
+          len(searches) >= 12 // (m.OUTLINE_EAGER + 2))
+    found_after = None
+    for i in range(1, 16):
+        look(see_through)
+        clock[0] += 2
+        if reader.mesos_box and found_after is None:
+            found_after = 2 * i
+    check(f"...so a see-through inventory opened then is found within {m.OUTLINE_EAGER + 4} s (took {found_after} s)",
+          found_after is not None and found_after <= m.OUTLINE_EAGER + 4)
 finally:
     m.time.monotonic = real_monotonic
 
