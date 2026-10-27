@@ -584,15 +584,33 @@ for n in (80, 80, 60, 60, 62, 62):
 app._update_display()
 root.update()
 details = {name: app.view.details.itemcget(app.view.details._vals[name], "text") for name in ("Potions", "Profit / hr")}
+check(f"Profit / hr is also a tile, next to Mesos / hr ({app.view.tiles['Profit / hr'].itemcget(app.view.tiles['Profit / hr']._v, 'text')})",
+      app.view.tiles["Profit / hr"].itemcget(app.view.tiles["Profit / hr"]._v, "text") == "3,100")
 check(f"Details shows what potions cost and what the picked-up ones covered ({details})",
       details == {"Potions": "-1,000 / +100", "Profit / hr": "3,100"})
 tiles = {k: {n: t.itemcget(getattr(t, n), "text") for n in ("_title", "_v", "_sub")} for k, t in app.view.potion_tiles.items()}
-check(f"the HP tile shows the potion seen, how many are left, and how many were used and their cost ({tiles['hp']})",
-      tiles["hp"] == {"_title": "RED POTION", "_v": "62 left", "_sub": "20 used \u00b7 -1,000"})
+check(f"the HP tile shows the potion seen, how many are left, how many an hour and what they cost an hour ({tiles['hp']})",
+      tiles["hp"] == {"_title": "RED POTION", "_v": "62 left", "_sub": "20/hr \u00b7 -1,000/hr"})
 check(f"the MP tile, with no MP potion on the quickslot, says so ({tiles['mp']})",
       tiles["mp"]["_v"] == "\u2014" and tiles["mp"]["_sub"] == "Not on quickslot")
 check("the potion's picture is on its square", app.view.potion_tiles["hp"]._icon_photo is not None
       and app.view.potion_tiles["mp"]._icon_photo is None)
+for n in (200, 200):
+    app._handle(m.Reading(where="MapleStory window 1920x1080", potions={"red_potion": 62, "white_potion": n}))
+app._update_display()
+root.update()
+hp = app.view.potion_tiles["hp"]
+shown = {n: hp.itemcget(getattr(hp, n), "text") for n in ("_title", "_v", "_sub")}
+check(f"two HP potions: both named, the one used most first, each one's count, and the HP used an hour of both ({shown})",
+      shown == {"_title": "RED + WHITE", "_v": "62 \u00b7 200 left", "_sub": "20/hr \u00b7 -1,000/hr"}
+      and hp._more_photo is not None and hp.itemcget(hp._more, "state") == "normal")
+hero = app.view.hero
+hero.show(eta="Lv 51 in 1 h 37 min")
+root.update()
+parts = [hero.itemcget(i, "text") for i in (hero._eta, hero._eta_in, hero._eta_time)]
+check(f"the level and the time to it are set apart, the time in white ({parts})",
+      parts == ["Lv 51", "in", "1 h 37 min"] and hero.itemcget(hero._eta_time, "fill") == __import__("ui_gfx").TEXT
+      and hero.bbox(hero._eta)[2] < hero.bbox(hero._eta_time)[0])
 app.set_compact(True); root.update()
 check("compact mode hides the potion tiles", not app.view.potions_row.winfo_ismapped())
 app.set_compact(False); root.update()

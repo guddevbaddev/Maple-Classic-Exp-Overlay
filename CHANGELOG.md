@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.19-beta
+
+**New**
+- **Profit / hr is a tile now**, next to **Mesos / hr**: what you make an hour once potions are paid for. The four tiles are two by two: Last 5 min and Elapsed, then Mesos / hr and Profit / hr.
+- **Potions an hour:** the HP and MP potion tiles say how many you're using an hour and what they cost you an hour ("36/hr · -5,400/hr"), from the first minute of tracking.
+- **More than one HP (or MP) potion on your keys:** the tile shows them all: the picture of the one you use most, with the next one's small in its corner (or "+2" for three or more), their names ("Orange + White"), each one's count in the same order ("14 · 120 left") and how many of them you use an hour together. The count turns red when any of them is down to **Warn at**.
+- **Time to your next level stands out:** "Lv 51" stays gold, and the time ("1 h 37 min") is bigger and white, so you see it at a glance.
+- **Releases are published by a workflow** (Publish), only once a draft has both downloads and each matches its SHA-256; its notes come from this changelog.
+
 ## 0.9.18-beta
 
 **Fixed**
