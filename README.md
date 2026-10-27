@@ -111,6 +111,7 @@ It turns itself off when you close the overlay, so your normal farming isn't aff
 
 The overlay reads the **count on each quickslot key** that has a potion on it (like the 163 under an Orange Potion), every few seconds. It knows the potions by their pictures (the game's own) and uses their **NPC shop price** from [meowdb](https://meowdb.com/msclassic/npc-shops/item-efficiency/consumables):
 
+- **Two tiles under the top three** show them: a **red** one for your HP potion and a **blue** one for your MP potion, each with the potion's picture, how many are left (red once it's down to **Warn at**), and how many you've used this session and what they cost ("27 used · -4,050"). With more than one of a kind on your keys, it shows the one you've used the most. A tile says **Not on quickslot** when there's no potion of its kind on your keys.
 - **A count that goes down** is potions used: their price comes off your profit.
 - **A count that goes up** is potions picked up (or bought): their price covers some of that cost.
 - **Details** shows both, like `-1,000 / +100` (mesos), and **Profit / hr**: mesos made, less what potions cost, per hour.

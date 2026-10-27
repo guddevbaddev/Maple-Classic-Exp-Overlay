@@ -379,6 +379,69 @@ class Tile(tk.Canvas):
             self.itemconfigure(self._v, text=value, font=font)
 
 
+class PotionTile(tk.Canvas):
+    """A potion on the quickslot: its picture on a coloured square (red for HP, blue for MP),
+    how many are left, and how many were used this session and what they cost."""
+
+    LOOK = {"hp": ("#2a171b", "#1a1013", "#5a2229", "#3b161b", "#ff8a7a"),     # panel, square, accent
+            "mp": ("#161d2e", "#10141e", "#223761", "#17264a", "#8ab4ff")}
+    H = 74
+
+    def __init__(self, parent, theme, kind, width, bg=INK):
+        self.t, self.kind, self.bw = theme, kind, width
+        g = theme.gfx
+        top, bottom, sq_top, sq_bottom, self.accent = self.LOOK[kind]
+        super().__init__(parent, width=g.px(width), height=g.px(self.H), bg=bg, highlightthickness=0, bd=0)
+        panel = g.panel(g.px(width), g.px(self.H), 13, top, bottom, 0.10).copy()
+        sq = g.panel(g.px(40), g.px(40), 11, sq_top, sq_bottom, 0.28)
+        panel.alpha_composite(sq, (g.px(11), g.px(17)))
+        self._photo = g.photo(panel)
+        self.create_image(0, 0, anchor="nw", image=self._photo)
+        self._icon_photo, self._icon_key = None, None
+        self._icon = self.create_image(g.px(31), g.px(37), anchor="center")
+        self._none = self.create_text(g.px(31), g.px(37), anchor="center", text=kind.upper(), fill=self.accent,
+                                      font=theme.font("bold", 11))
+        x = g.px(TEXT_X := 60)
+        self.text_x = TEXT_X
+        self._title = self.create_text(x, g.px(12), anchor="nw", text=f"{kind.upper()} POTION", fill=TEXT_DIM,
+                                       font=theme.font("semibold", 9))
+        self._v = self.create_text(x, g.px(27), anchor="nw", text="\u2014", fill=TEXT, font=theme.font("bold", 16))
+        self._sub = self.create_text(x, g.px(52), anchor="nw", text="", fill=TEXT_DIM, font=theme.font("regular", 10))
+
+    def _fit(self, item, text, weight, sizes):
+        room = self.t.px(self.bw - self.text_x - 8)
+        for size in sizes:                                  # a long one gets smaller...
+            font = self.t.font(weight, size)
+            if font.measure(text) <= room:
+                break
+        else:                                               # ...and, at the smallest Sizes, shortened
+            while len(text) > 1 and font.measure(text + "\u2026") > room:
+                text = text[:-1].rstrip()
+            text += "\u2026"
+        self.itemconfigure(item, text=text, font=font)
+
+    def set(self, icon=None, title=None, value="\u2014", sub="", low=False):
+        """icon: the potion's picture (a PIL image) or None; title: its name; value: e.g. "14 left";
+        sub: e.g. "12 used \u00b7 -1,800"; low: down to the "Warn at" number (shown in the accent)."""
+        key = (id(icon), self.t.px(28))
+        if key != self._icon_key:
+            self._icon_key = key
+            if icon is None:
+                self._icon_photo = None
+                self.itemconfigure(self._icon, image="")
+            else:
+                pic = icon.copy()
+                size = self.t.px(28)
+                pic.thumbnail((size, size), Image.LANCZOS)
+                self._icon_photo = self.t.gfx.photo(pic)
+                self.itemconfigure(self._icon, image=self._icon_photo)
+            self.itemconfigure(self._none, state="hidden" if icon is not None else "normal")
+        self._fit(self._title, (title or f"{self.kind.upper()} POTION").upper(), "semibold", (9, 8))
+        self._fit(self._v, value, "bold", (16, 14, 12))
+        self.itemconfigure(self._v, fill=self.accent if low else TEXT)
+        self._fit(self._sub, sub, "regular", (10.5, 10, 9))
+
+
 class Details(tk.Canvas):
     """The rest of the numbers, one line each, for when you want them."""
 
@@ -498,20 +561,29 @@ class MainView(tk.Frame):
             t.grid(row=0, column=i, padx=(0 if i == 0 else g.px(8), 0))
             self.tiles[name] = t
 
+        self.potions_row = tk.Frame(self, bg=bg)           # the HP and MP potions on the quickslot
+        self.potions_row.grid(row=3, column=0, padx=g.px(SIDE), pady=pad(0, 6), sticky="we")
+        pw = (INNER - 8) // 2
+        self.potion_tiles = {}
+        for i, kind in enumerate(("hp", "mp")):
+            t = PotionTile(self.potions_row, theme, kind, pw, bg)
+            t.grid(row=0, column=i, padx=(0 if i == 0 else g.px(8), 0))
+            self.potion_tiles[kind] = t
+
         self.more_btn = Button(self, theme, text="Details", icon="down", kind="ghost", width=INNER, height=30, radius=10,
                                size=12, weight="semibold", command=self._toggle_details, bg=bg)
-        self.more_btn.grid(row=3, column=0, padx=g.px(SIDE), pady=pad(0, 4))
+        self.more_btn.grid(row=4, column=0, padx=g.px(SIDE), pady=pad(0, 4))
         self.details_open = details
         self.details = Details(self, theme, ("% / hr", "% last 5 min", "% last 15 min", "% last 30 min",
                                              "% last hour", "Gained", "Current", "Mesos", "Mesos / 5 min",
                                              "Potions", "Profit / hr"), bg)
-        self.details.grid(row=4, column=0, padx=g.px(SIDE), pady=pad(0, 8))
+        self.details.grid(row=5, column=0, padx=g.px(SIDE), pady=pad(0, 8))
         if not details:
             self.details.grid_remove()
         self.more_btn.set(icon="up" if details else "down")
 
         controls = tk.Frame(self, bg=bg)
-        controls.grid(row=5, column=0, padx=g.px(SIDE - 8), pady=pad(0, 2), sticky="we")
+        controls.grid(row=6, column=0, padx=g.px(SIDE - 8), pady=pad(0, 2), sticky="we")
         controls.columnconfigure(0, weight=1)
         self.start_btn = Button(controls, theme, text="Start", icon="play", kind="primary", width=INNER - 8 - 52 - 52, height=46,
                                 radius=14, size=14, weight="bold", command=cb["start"], bg=bg)
@@ -522,7 +594,7 @@ class MainView(tk.Frame):
         self.menu_btn.grid(row=0, column=2, padx=(g.px(4), 0))
 
         foot = tk.Frame(self, bg=bg)
-        foot.grid(row=6, column=0, padx=g.px(SIDE), pady=pad(6, 0), sticky="we")
+        foot.grid(row=7, column=0, padx=g.px(SIDE), pady=pad(6, 0), sticky="we")
         foot.columnconfigure(0, weight=1)
         self.logging = Toggle(foot, theme, "Log this run", True, cb["logging"], bg, alt="Not logging")
         self.logging.grid(row=0, column=0, sticky="w")
@@ -530,16 +602,17 @@ class MainView(tk.Frame):
                                 command=cb["share"], tip="A picture of this session to paste into Discord", bg=bg)
         self.share_btn.grid(row=0, column=1, sticky="e")
         self.message = Message(self, theme, bg)
-        self.message.grid(row=7, column=0, padx=g.px(SIDE + 2), pady=pad(2, 14 if not version else 4), sticky="we")
-        self.foot_widgets = [self.tiles_row, self.more_btn, self.details, self.reset_btn, self.menu_btn, foot]
+        self.message.grid(row=8, column=0, padx=g.px(SIDE + 2), pady=pad(2, 14 if not version else 4), sticky="we")
+        self.foot_widgets = [self.tiles_row, self.potions_row, self.more_btn, self.details, self.reset_btn,
+                             self.menu_btn, foot]
         if version:                       # which version this is, small, at the very bottom
             self.version = tk.Label(self, text=version, bg=bg, fg=TEXT_FAINT, font=theme.font("regular", 9), anchor="e")
-            self.version.grid(row=8, column=0, padx=g.px(SIDE + 2), pady=pad(0, 10), sticky="we")
+            self.version.grid(row=9, column=0, padx=g.px(SIDE + 2), pady=pad(0, 10), sticky="we")
             self.foot_widgets.append(self.version)
 
     # ---- showing things
     def show(self, **m):
-        """rate, delta, spark, pct, eta (hero); tiles, details (dicts); state, state_text, message."""
+        """rate, delta, spark, pct, eta (hero); tiles, details, potions (dicts); state, state_text, message."""
         hero = {k: m[k] for k in ("rate", "delta", "spark", "pct", "eta", "mesos") if k in m}
         if "spark" in hero:
             hero["spark"] = tuple(hero["spark"])
@@ -549,6 +622,8 @@ class MainView(tk.Frame):
             self.tiles[name].set(value)
         for name, value in (m.get("details") or {}).items():
             self.details.set(name, value)
+        for kind, shown in (m.get("potions") or {}).items():
+            self.potion_tiles[kind].set(**shown)
         if "state" in m:
             self.pill.set(m["state"], m.get("state_text", ""))
         if "message" in m:

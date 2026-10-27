@@ -586,6 +586,17 @@ root.update()
 details = {name: app.view.details.itemcget(app.view.details._vals[name], "text") for name in ("Potions", "Profit / hr")}
 check(f"Details shows what potions cost and what the picked-up ones covered ({details})",
       details == {"Potions": "-1,000 / +100", "Profit / hr": "3,100"})
+tiles = {k: {n: t.itemcget(getattr(t, n), "text") for n in ("_title", "_v", "_sub")} for k, t in app.view.potion_tiles.items()}
+check(f"the HP tile shows the potion seen, how many are left, and how many were used and their cost ({tiles['hp']})",
+      tiles["hp"] == {"_title": "RED POTION", "_v": "62 left", "_sub": "20 used \u00b7 -1,000"})
+check(f"the MP tile, with no MP potion on the quickslot, says so ({tiles['mp']})",
+      tiles["mp"]["_v"] == "\u2014" and tiles["mp"]["_sub"] == "Not on quickslot")
+check("the potion's picture is on its square", app.view.potion_tiles["hp"]._icon_photo is not None
+      and app.view.potion_tiles["mp"]._icon_photo is None)
+app.set_compact(True); root.update()
+check("compact mode hides the potion tiles", not app.view.potions_row.winfo_ismapped())
+app.set_compact(False); root.update()
+check("...and the full window shows them", app.view.potions_row.winfo_ismapped())
 dialog = app.open_potion_prices()
 root.update()
 entries = [w for w in dialog.winfo_children()[0].winfo_children() if isinstance(w, m.tk.Entry)]
