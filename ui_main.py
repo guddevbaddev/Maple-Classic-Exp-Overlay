@@ -465,7 +465,7 @@ class Message(tk.Label):
 class MainView(tk.Frame):
     """Everything in the main window, top to bottom."""
 
-    def __init__(self, parent, theme, cb, details=False, bg=INK):
+    def __init__(self, parent, theme, cb, details=False, bg=INK, version=""):
         super().__init__(parent, bg=bg)
         self.t, self.cb, g = theme, cb, theme.gfx
         self.columnconfigure(0, weight=1, minsize=g.px(W))
@@ -529,8 +529,12 @@ class MainView(tk.Frame):
                                 command=cb["share"], tip="A picture of this session to paste into Discord", bg=bg)
         self.share_btn.grid(row=0, column=1, sticky="e")
         self.message = Message(self, theme, bg)
-        self.message.grid(row=7, column=0, padx=g.px(SIDE + 2), pady=pad(2, 14), sticky="we")
+        self.message.grid(row=7, column=0, padx=g.px(SIDE + 2), pady=pad(2, 14 if not version else 4), sticky="we")
         self.foot_widgets = [self.tiles_row, self.more_btn, self.details, self.reset_btn, self.menu_btn, foot]
+        if version:                       # which version this is, small, at the very bottom
+            self.version = tk.Label(self, text=version, bg=bg, fg=TEXT_FAINT, font=theme.font("regular", 9), anchor="e")
+            self.version.grid(row=8, column=0, padx=g.px(SIDE + 2), pady=pad(0, 10), sticky="we")
+            self.foot_widgets.append(self.version)
 
     # ---- showing things
     def show(self, **m):

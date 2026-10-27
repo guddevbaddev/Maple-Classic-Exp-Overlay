@@ -29,6 +29,7 @@ import queue
 import re
 import secrets
 import shutil
+import ssl
 import sys
 import threading
 import time
@@ -65,8 +66,8 @@ PLATFORM = create_platform()
 PLATFORM.setup_process()
 cv2.setNumThreads(1)
 
-VERSION = "0.9.14-beta"
-WINDOW_TITLE = "Maple Classic Exp Overlay"    # the version is shown in Settings
+VERSION = "0.9.15-beta"
+WINDOW_TITLE = "Maple Classic Exp Overlay"    # the version is shown at the bottom, and in Settings
 OLD_TITLES = ("Maple EXP/hr",)               # what versions before 0.9.3 were called
 
 # Files that come with the program (inside the .exe when packaged), the folder it runs from,
@@ -102,7 +103,7 @@ OUTLINE_EAGER = 3           # ...in the first minute after starting or Reset, wh
 EAGER_SECONDS = 60          # opened (about 60-170 ms a search, at 900p-1440p)
 DEFAULTS = {"gap_seconds": 15, "transparency": 0, "topmost": True,
             "check_updates": True, "skip_version": "", "ui_scale": 100, "compact": False, "hotkeys_on": True,
-            "details": False, "level": 0}       # level: for a bar that shows only the % (0: unknown)
+            "details": False, "level": 0, "auto_pause": True}       # level: for a bar that shows only the % (0: unknown)
 # Settings > Size, in %: only these, so the window can't get too small to read or use.
 UI_SCALES = (60, 70, 80, 90, 100, 110, 125, 150, 175, 200)
 MAX_TRANSPARENCY = 40       # %: more and the window can fade out of sight, with Settings in it
@@ -312,7 +313,21 @@ def _github(url, timeout):
         raise ValueError(f"not this repository's releases: {url[:80]}")
     request = urllib.request.Request(url, headers={
         "User-Agent": f"MapleClassicExpOverlay/{VERSION}", "Accept": "application/vnd.github+json, */*"})
-    return urllib.request.urlopen(request, timeout=timeout)
+    return urllib.request.urlopen(request, timeout=timeout, context=ssl_context())
+
+
+MAC_CERTS = "/etc/ssl/cert.pem"     # the certificates macOS itself trusts, on every Mac
+
+
+def ssl_context():
+    """How HTTPS checks who it's talking to. The Mac app's Python looks for the trusted
+    certificates where it was built (on GitHub's build machine), so on a player's Mac it finds
+    none and every request fails ("Couldn't check for updates"). So on a Mac, macOS's own are
+    trusted too."""
+    context = ssl.create_default_context()
+    if sys.platform == "darwin" and os.path.exists(MAC_CERTS):
+        context.load_verify_locations(cafile=MAC_CERTS)
+    return context
 
 
 def check_for_update(timeout=8):
@@ -2064,6 +2079,7 @@ class Session:
         self.here = None            # the map you're on now
         self.last_gain = None
         self.pq = False             # PQ mode: maps don't matter, and idle means PQ_GAP
+        self.auto_pause = True      # pause by itself after idle_gap without EXP (Settings)
 
     @property
     def idle_gap(self):
@@ -2129,7 +2145,7 @@ class Session:
 
     def tick(self, now):
         """Call regularly: pauses after `gap` seconds without EXP."""
-        if self.on and self.exp.running and now - self.last_gain > self.idle_gap:
+        if self.auto_pause and self.on and self.exp.running and now - self.last_gain > self.idle_gap:
             self._wait("idle")
 
 
@@ -2764,6 +2780,7 @@ class App:
         if isinstance(saved, list) and len(saved) == 6:
             self.reader.saved_mesos = tuple(saved)
         self.session = Session(self.cfg["gap_seconds"])
+        self.session.auto_pause = self.cfg["auto_pause"]
         self.tracker, self.meso = self.session.exp, self.session.meso
         self.party = 1
         self._party_seen = (None, 0)
@@ -2860,7 +2877,8 @@ class App:
         callbacks = dict(settings=self.open_settings, compact=lambda: self.set_compact(not self.compact),
                          log=self.toggle_log, start=self.toggle, reset=self.reset, logging=self._logging_clicked,
                          menu=self._open_menu, share=self.share_card, details=self._details_changed)
-        self.view = self.main = MainView(self.root, self.theme, callbacks, details=bool(self.cfg.get("details")))
+        self.view = self.main = MainView(self.root, self.theme, callbacks, details=bool(self.cfg.get("details")),
+                                         version=f"v{VERSION}")
         self.view.grid(row=0, column=0, sticky="n")
         if self.compact:
             self.view.set_compact(True)
@@ -3383,6 +3401,8 @@ class App:
         wrap = px(380)
 
         self._section(body, "Tracking", first=True)
+        auto_pause = tk.BooleanVar(value=bool(self.cfg["auto_pause"]))
+        self._switch(body, "Pause the timer when no EXP comes in", auto_pause).pack(anchor="w", pady=(0, px(10)))
         gap = tk.StringVar(value=str(self.cfg["gap_seconds"]))
         line = tk.Frame(body, bg=BG)
         line.pack(fill="x")
@@ -3454,6 +3474,7 @@ class App:
             self.cfg["transparency"] = min(MAX_TRANSPARENCY, max(0, int(float(transparency.get()))))
             self.cfg["topmost"] = bool(topmost.get())
             self.cfg["check_updates"] = bool(updates.get())
+            self.cfg["auto_pause"] = self.session.auto_pause = bool(auto_pause.get())
             self._apply_window_settings()
             w.attributes("-topmost", self.cfg["topmost"])
             scale = int(size.get().rstrip("%"))
@@ -3463,7 +3484,7 @@ class App:
                 self.root.after(60, self._reopen_settings)        # (drawn again at the new size)
             save_config(self.cfg)
 
-        for var in (gap, transparency, topmost, updates, size):
+        for var in (auto_pause, gap, transparency, topmost, updates, size):
             var.trace_add("write", apply)
         self._hotkey_settings(body)
         buttons = tk.Frame(body, bg=BG)
@@ -3661,9 +3682,10 @@ class App:
         parent = self.settings_win if manual and self.settings_win and self.settings_win.winfo_exists() \
             else self.root
         if error is not None:
+            log_error("checking for updates", error)
             if manual:
                 messagebox.showinfo("Updates", "Couldn't check for updates. Are you connected to the "
-                                    "internet?", parent=parent)
+                                    f"internet?\n\n({type(error).__name__}: {str(error)[:150]})", parent=parent)
             return                                      # at start: quietly try again next time
         if not found:
             if manual:

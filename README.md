@@ -75,7 +75,7 @@ You need a Mac with Apple Silicon (M1 or newer) and macOS 14 (Sonoma) or newer, 
 
    The overlay reads them from your screen, so it can't see through itself. If it's in the way, it tells you at the bottom of its window. It remembers where you put it.
 4. **Press Start** and play normally. You only need to press it once:
-   - It **pauses by itself** when you get no EXP for 15 seconds or leave the map, and carries on at your next EXP gain. Paused time doesn't count, so EXP/hr only covers your farming.
+   - It **pauses by itself** when you get no EXP for 15 seconds or leave the map, and carries on at your next EXP gain. Paused time doesn't count, so EXP/hr only covers your farming. The time without EXP before it paused is taken back off the clock too, so the timer jumps back a little. Don't want that (say, you're timing how long it takes to gather items)? Turn off **Pause the timer when no EXP comes in** in ⚙ Settings: the timer then keeps running until you press Pause.
    - On a different map, the numbers start from zero for that map.
 5. **Want mesos tracked?** Keep your inventory open, on any tab.
 
@@ -163,6 +163,7 @@ Click **>** at the top right of the overlay to open the log. It's the table on t
 
 ## Settings (⚙)
 
+- **Pause the timer when no EXP comes in** (on by default). Off: the timer keeps running through breaks, without ever jumping back, until you press Pause. Leaving the map still pauses it.
 - **Pause tracking after no EXP for...** How long you can go without EXP before it pauses by itself. This also restarts the log's 5-minute timer. The default is 15 seconds.
 - **Window transparency.** Makes the overlay see-through, up to 40%. (More and it could fade out of sight, with Settings in it.)
 - **Size.** Makes the text and the whole window smaller or bigger, from 60% to 200%. The smallest text stops at a readable size, so it never gets too small to read. It's sized for each screen, so a window moved to a screen with different Windows scaling (like a 5K and a 1440p screen) looks the same size on both.
