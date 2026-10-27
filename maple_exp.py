@@ -107,7 +107,8 @@ EAGER_SECONDS = 60          # opened (about 60-170 ms a search, at 900p-1440p)
 DEFAULTS = {"gap_seconds": 120, "transparency": 0, "topmost": True,
             "check_updates": True, "skip_version": "", "ui_scale": 100, "compact": False, "hotkeys_on": True,
             "details": False, "level": 0, "auto_pause": True,       # level: for a bar that shows only the % (0: unknown)
-            "low_potion_alert": True, "low_potions": 15}            # a sound for each one used once a potion is down to this
+            "low_potion_alert": True, "low_potions": 15,            # a sound for each one used once a potion is down to this
+            "alert_volume": 70}                                     # %: how loud that sound is
 # Settings > Size, in %: only these, so the window can't get too small to read or use.
 UI_SCALES = (60, 70, 80, 90, 100, 110, 125, 150, 175, 200)
 MAX_TRANSPARENCY = 40       # %: more and the window can fade out of sight, with Settings in it
@@ -235,7 +236,8 @@ def load_config():
     for key, default in DEFAULTS.items():
         value = cfg.get(key)
         if type(value) is not type(default) or (key == "gap_seconds" and not 1 <= value <= 3600) or (
-                key == "low_potions" and not 1 <= value <= LOW_POTIONS_MAX):
+                key == "low_potions" and not 1 <= value <= LOW_POTIONS_MAX) or (
+                key == "alert_volume" and not 0 <= value <= 100):
             cfg[key] = default
     prices = cfg.get("potion_prices")
     cfg["potion_prices"] = {k: v for k, v in prices.items() if isinstance(k, str) and type(v) is int
@@ -283,6 +285,24 @@ def move_old_data():
                 shutil.copy2(old, new)
             except Exception as e:
                 log_error(f"copying {name} from the program's folder", e)
+
+
+def alert_sound(volume):
+    """The low-potion sound, as the bytes of a .wav file: two short rising notes, like a chime,
+    at `volume` % (made here, so its loudness can be set; 0 is silent)."""
+    rate = 22050
+    notes = []
+    for freq, length in ((880.0, 0.12), (1318.5, 0.22)):        # A5, then E6
+        t = np.arange(int(rate * length)) / rate
+        fade = np.minimum(1.0, t / 0.005) * np.exp(-t * 9)       # a soft start, then dies away
+        notes.append((np.sin(2 * np.pi * freq * t) + 0.3 * np.sin(4 * np.pi * freq * t)) * fade / 1.3)
+    wave = np.concatenate(notes) * (max(0, min(100, volume)) / 100) ** 2 * 0.9   # (loudness: square)
+    pcm = (wave * 32767).astype("<i2").tobytes()
+    head = (b"RIFF" + (36 + len(pcm)).to_bytes(4, "little") + b"WAVEfmt " + (16).to_bytes(4, "little")
+            + (1).to_bytes(2, "little") + (1).to_bytes(2, "little") + rate.to_bytes(4, "little")
+            + (rate * 2).to_bytes(4, "little") + (2).to_bytes(2, "little") + (16).to_bytes(2, "little")
+            + b"data" + len(pcm).to_bytes(4, "little"))
+    return head + pcm
 
 
 def find_tesseract():
@@ -3491,6 +3511,18 @@ class App:
         tk.Label(low_step, text="left", bg=BG, fg=DIM, font=th.font("regular", 11)).pack(side="left", padx=(px(6), 0))
         tk.Label(body, text="While tracking, a sound plays each time you use a potion that's down to this many "
                  "on your quickslot.", wraplength=wrap, justify="left", **dim).pack(anchor="w", pady=(px(5), 0))
+        volume = tk.IntVar(value=int(self.cfg["alert_volume"]))
+        line = tk.Frame(body, bg=BG)
+        line.pack(fill="x", pady=(px(12), 0))
+        tk.Label(line, text="Volume", **text).pack(side="left")
+        loud = tk.Label(line, text=f"{volume.get()}%", **dim)
+        loud.pack(side="right")
+        volume.trace_add("write", lambda *_: loud.config(text=f"{int(float(volume.get()))}%"))
+        line = tk.Frame(body, bg=BG)
+        line.pack(fill="x", pady=(px(6), 0))
+        Slider(line, th, volume, 0, 100, 250, BG).pack(side="left")
+        Button(line, th, text="Test", kind="secondary", width=72, height=34, radius=10, size=12,
+               command=lambda: self.play_alert(int(float(volume.get()))), bg=BG).pack(side="right")
 
         self._section(body, "Window")
         transparency = tk.IntVar(value=int(self.cfg["transparency"]))
@@ -3550,6 +3582,7 @@ class App:
                 limit = 0
             if 1 <= limit <= LOW_POTIONS_MAX:
                 self.cfg["low_potions"] = limit
+            self.cfg["alert_volume"] = min(100, max(0, int(float(volume.get()))))
             self._apply_window_settings()
             w.attributes("-topmost", self.cfg["topmost"])
             scale = int(size.get().rstrip("%"))
@@ -3559,7 +3592,7 @@ class App:
                 self.root.after(60, self._reopen_settings)        # (drawn again at the new size)
             save_config(self.cfg)
 
-        for var in (auto_pause, gap, transparency, topmost, updates, size, low_alert, low):
+        for var in (auto_pause, gap, transparency, topmost, updates, size, low_alert, low, volume):
             var.trace_add("write", apply)
         self._hotkey_settings(body)
         buttons = tk.Frame(body, bg=BG)
@@ -4096,16 +4129,23 @@ class App:
         new = {k: n for k, n in self.low_counts.items() if n <= limit and n < before.get(k, n)}
         if not new or not self.session.on or not self.cfg["low_potion_alert"]:
             return
-        try:
-            if not PLATFORM.play_alert():
-                self.root.bell()
-        except Exception as e:
-            log_error("playing the low-potion sound", e)
-            self.root.bell()
+        self.play_alert()
         text = "Low on potions: " + ", ".join(f"{self.potion_name(k)} ({n} left)" for k, n in sorted(new.items())) + "."
         self.potion_note = (text, time.monotonic())
         self.status.set(text)
         log_activity(text)
+
+    def play_alert(self, volume=None):
+        """The low-potion sound, at the volume set in Settings (or `volume`)."""
+        volume = self.cfg["alert_volume"] if volume is None else volume
+        if volume <= 0:
+            return
+        try:
+            if not PLATFORM.play_sound(alert_sound(volume)):
+                self.root.bell()
+        except Exception as e:
+            log_error("playing the low-potion sound", e)
+            self.root.bell()
 
     def potion_prices(self):
         """{key: mesos} for each potion: the price set in Settings, or the NPC shop's."""

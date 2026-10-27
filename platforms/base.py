@@ -144,9 +144,9 @@ class Platform(ABC):
         except Exception:
             print(f"{title}: {text}")
 
-    def play_alert(self):
-        """Plays the OS's alert sound, without waiting for it to finish. True if it did (where
-        it can't, the overlay rings the window's bell instead)."""
+    def play_sound(self, wav):
+        """Plays a sound (the bytes of a .wav file), without waiting for it to finish. True if
+        it did (where it can't, the overlay rings the window's bell instead)."""
         return False
 
     def copy_image(self, path):

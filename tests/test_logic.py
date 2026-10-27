@@ -446,6 +446,8 @@ check("a Warn at number out of range falls back to 15", m.load_config()["low_pot
 m.CONFIG_PATH.write_text(json.dumps({"low_potions": 50, "low_potion_alert": False}), encoding="utf-8")
 cfg = m.load_config()
 check("Warn at and the sound switch are kept", cfg["low_potions"] == 50 and cfg["low_potion_alert"] is False)
+m.CONFIG_PATH.write_text(json.dumps({"alert_volume": 140}), encoding="utf-8")
+check("a volume out of range falls back to 70%", m.load_config()["alert_volume"] == 70)
 m.CONFIG_PATH.write_text("[1, 2", encoding="utf-8")
 check("an unreadable settings file gives the defaults", m.load_config()["topmost"] is True)
 

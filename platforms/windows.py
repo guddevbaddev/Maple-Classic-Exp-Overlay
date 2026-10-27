@@ -295,9 +295,12 @@ class WindowsPlatform(Platform):
         except Exception:
             super().alert(title, text)
 
-    def play_alert(self):
+    def play_sound(self, wav):
+        # (a sound from memory can't play asynchronously, so it plays on a thread of its own)
+        import threading
         import winsound
-        winsound.PlaySound("SystemExclamation", winsound.SND_ALIAS | winsound.SND_ASYNC)
+        threading.Thread(target=winsound.PlaySound, args=(wav, winsound.SND_MEMORY | winsound.SND_NODEFAULT),
+                         daemon=True).start()
         return True
 
     def copy_image(self, path):

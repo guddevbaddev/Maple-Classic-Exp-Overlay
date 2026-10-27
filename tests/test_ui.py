@@ -606,8 +606,8 @@ check("a price changed there is saved and used", app.cfg["potion_prices"] == {"r
 app.session.reset()
 
 # ---- the low-potion sound: each potion used once it's down to "Warn at" (15 to start with)
-beeps, real_alert = [], m.PLATFORM.play_alert
-m.PLATFORM.play_alert = lambda: (beeps.append(1), True)[1]
+beeps, real_sound = [], m.PLATFORM.play_sound
+m.PLATFORM.play_sound = lambda wav: (beeps.append(wav), True)[1]
 app.session.on = True
 check("the low-potion sound is on, at 15 left, to start with",
       app.cfg["low_potion_alert"] is True and app.cfg["low_potions"] == 15)
@@ -642,7 +642,18 @@ app.cfg["low_potion_alert"], app.cfg["low_potions"] = True, 15
 app.session.on = False
 potion_count(10, times=3)
 check("not while tracking is paused (Pause pressed)", len(beeps) == 4)
-m.PLATFORM.play_alert = real_alert
+app.cfg["alert_volume"] = 0
+app.session.on = True
+potion_count(9)
+check("at volume 0 it's silent", len(beeps) == 4)
+app.cfg["alert_volume"] = 70
+app.play_alert(100)
+loud, quiet = m.alert_sound(100), m.alert_sound(20)
+peak = lambda wav: int(np.abs(np.frombuffer(wav[44:], "<i2")).max())
+check(f"the sound is a real .wav, louder at a higher volume ({peak(quiet)} < {peak(loud)})",
+      beeps[-1] == loud and loud[:4] == b"RIFF" and loud[8:12] == b"WAVE" and 0 < peak(quiet) < peak(loud) <= 32767
+      and peak(m.alert_sound(0)) == 0)
+m.PLATFORM.play_sound = real_sound
 app.session.reset()
 app.low_counts = {}
 del app.tracker.elapsed

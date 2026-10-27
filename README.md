@@ -115,7 +115,7 @@ The overlay reads the **count on each quickslot key** that has a potion on it (l
 - **A count that goes up** is potions picked up (or bought): their price covers some of that cost.
 - **Details** shows both, like `-1,000 / +100` (mesos), and **Profit / hr**: mesos made, less what potions cost, per hour.
 - A count has to be read the same twice in a row before it counts (three times for a big change), so a misread doesn't show up as potions used. A change of more than 100 at once (a trip to storage, or moving potions to another key) starts counting afresh.
-- **A sound when potions run low:** while tracking, each time you use a potion that's down to **15 or fewer** on your quickslot, the overlay plays a sound and says which potion and how many are left. Change the number with ⚙ > **Warn at**, or turn it off with **Sound when potions run low**.
+- **A sound when potions run low:** while tracking, each time you use a potion that's down to **15 or fewer** on your quickslot, the overlay plays a sound and says which potion and how many are left. Change the number with ⚙ > **Warn at**, how loud it is with **Volume** (**Test** plays it), or turn it off with **Sound when potions run low**.
 - **Changing prices:** ⚙ > **Potion prices** > **Change...**: set what a potion is worth to you, for example its free market price. **Shop prices** puts them all back. Elixirs aren't sold in NPC shops, so they start at 0 (left out) until you set a price.
 
 It knows the Red, Orange, White and Blue Potions, the Elixirs, and the foods NPC shops sell (Apple, Meat, Lemon, Hamburger, Pure Water and the rest: the list is in ⚙ > Potion prices). A potion only on the inventory's Use tab, not on a quickslot key, isn't counted. **This is new:** if it gets a count wrong, please send a screenshot (PNG) of the game with your quickslot in a [bug report](../../issues).
@@ -181,7 +181,7 @@ Click **>** at the top right of the overlay to open the log. It's the table on t
 - **Pause the timer when no EXP comes in** (on by default). Off: the timer keeps running through breaks, without ever jumping back, until you press Pause. Not seeing the game still pauses it.
 - **Pause tracking after no EXP for...** How long you can go without EXP before it pauses by itself. This also restarts the log's 5-minute timer. The default is 2 minutes (120 s). (If you had the old default of 15 seconds, it's 2 minutes now; change it back here if you liked it.)
 - **Potion prices.** What each potion is worth, for **Profit / hr**. See [Potions](#potions).
-- **Sound when potions run low** (on by default) and **Warn at** (15 to start with): a sound each time you use a potion that's down to that many on your quickslot.
+- **Sound when potions run low** (on by default) and **Warn at** (15 to start with): a sound each time you use a potion that's down to that many on your quickslot. **Volume** sets how loud (70% to start with; your computer's volume still applies), and **Test** plays it.
 - **Window transparency.** Makes the overlay see-through, up to 40%. (More and it could fade out of sight, with Settings in it.)
 - **Size.** Makes the text and the whole window smaller or bigger, from 60% to 200%. The smallest text stops at a readable size, so it never gets too small to read. It's sized for each screen, so a window moved to a screen with different Windows scaling (like a 5K and a 1440p screen) looks the same size on both.
 - **Hotkeys.** Turn them on or off, and change them. See [Hotkeys](#hotkeys).
