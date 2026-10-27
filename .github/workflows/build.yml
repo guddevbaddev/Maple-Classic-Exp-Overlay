@@ -262,8 +262,10 @@ jobs:
           app="build/dist/Maple Classic Exp Overlay.app/Contents/MacOS/Maple Classic Exp Overlay"
           export MAPLE_EXP_DATA="$RUNNER_TEMP/overlay-data"
           mkdir -p "$MAPLE_EXP_DATA"
-          # (with the settings a new player has: no config file, so the update check runs too)
-          "$app" & pid=$!
+          # (with the settings a new player has: no config file, so the update check runs too, and a
+          # failed check is written in errors.log. Its Python's own certificates are hidden, as on a
+          # player's Mac, where they don't exist: the check must work with macOS's alone.)
+          SSL_CERT_FILE=/nonexistent SSL_CERT_DIR=/nonexistent "$app" & pid=$!
           sleep 20
           if ! kill -0 "$pid" 2>/dev/null; then
             echo "::error::The app closed by itself within 20 seconds."

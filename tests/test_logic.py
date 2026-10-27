@@ -363,6 +363,23 @@ for url in ("https://example.com/x.zip", "https://github.com/someone/else/releas
     except ValueError:
         refused.append(url)
 check("...and it can't be pointed anywhere else", len(refused) == 3)
+# The Mac app's Python looks for trusted certificates where it was built (GitHub's machine): on a
+# player's Mac there are none there, so macOS's own (/etc/ssl/cert.pem) are added, or HTTPS fails.
+real_platform, real_certs, real_default = sys.platform, m.MAC_CERTS, m.ssl.create_default_context
+bare = lambda: m.ssl.SSLContext(m.ssl.PROTOCOL_TLS_CLIENT)          # a Python that found no certificates
+m.ssl.create_default_context = bare
+system = next((p for p in ("/etc/ssl/certs/ca-certificates.crt", "/etc/ssl/cert.pem", "/etc/pki/tls/cert.pem")
+               if os.path.exists(p)), None)
+if system:
+    sys.platform, m.MAC_CERTS = "darwin", system
+    ctx = m.ssl_context()
+    check(f"on a Mac, HTTPS trusts macOS's own certificates ({ctx.cert_store_stats()['x509_ca']} of them)",
+          ctx.cert_store_stats()["x509_ca"] > 50 and ctx.verify_mode == m.ssl.CERT_REQUIRED and ctx.check_hostname)
+    sys.platform = "win32"
+    check("...and only on a Mac", m.ssl_context().cert_store_stats()["x509_ca"] == 0)
+else:
+    print("     (no system certificate file here: Mac certificates not tested)")
+sys.platform, m.MAC_CERTS, m.ssl.create_default_context = real_platform, real_certs, real_default
 check("the update check never reads the log, and the bug report never includes notes",
       "entries" not in inspect.getsource(m.check_for_update)
       and not any(w in inspect.getsource(m.App._report_text) for w in ("note_of", "notes_of", '"note"', "autolog.entries")))
