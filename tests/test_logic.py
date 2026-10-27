@@ -801,7 +801,7 @@ while t < 400:
 check(f"in PQ mode the log keeps going through 2-minute stages, on one {m.PQ_MAP!r} line "
       f"({entry and (entry['map'], entry['exp'])})", entry is not None and entry["map"] == m.PQ_MAP and entry["exp"] == 6000)
 
-# ---- % of a level gained in the last 5, 15, 30 and 60 minutes (Lv 30 needs 95,700: 957 is 1%)
+# ---- % of a level gained in the last 5, 15 and 60 minutes (Lv 30 needs 95,700: 957 is 1%)
 tr = exp_tracker(9570, 10.0)
 for i in range(1, 3):
     clock[0] += 60
@@ -812,8 +812,8 @@ for i in range(3, 71):                                   # 1% a minute for 70 mi
     clock[0] += 60
     read(tr, 9570 + 957 * i)
 got = [m.fmt_pct_gained(tr.pct_in_last(sec), sec) for sec, _ in m.PCT_WINDOWS]
-check(f"1% a minute is 5%, 15%, 30% and 60% over the last 5, 15, 30 and 60 min ({got})",
-      got == ["5.00%", "15.00%", "30.00%", "60.00%"])
+check(f"1% a minute is 5%, 15% and 60% over the last 5, 15 and 60 min ({got})",
+      got == ["5.00%", "15.00%", "60.00%"])
 tr.pause()
 clock[0] += 600
 tr.start()

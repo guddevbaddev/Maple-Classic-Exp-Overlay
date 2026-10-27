@@ -86,7 +86,7 @@ TEMPLATE_PATH = ASSETS / "digits.npz"
 ICON_PATH = ASSETS / "icon.ico"
 POLL_SECONDS = 1.5          # how often to read the EXP bar
 ROLLING_WINDOW = 300        # seconds used for the "last 5 min" rate
-PCT_WINDOWS = ((300, "% last 5 min"), (900, "% last 15 min"), (1800, "% last 30 min"),
+PCT_WINDOWS = ((300, "% last 5 min"), (900, "% last 15 min"),
                (3600, "% last hour"))   # (seconds, name) of the "% of a level gained in the last ..." lines
 SEARCH_STRIP = 0.22         # bottom part of the game window searched for the EXP text
 LOG_PATH = DATA_DIR / "exp_log.json"
@@ -4006,9 +4006,8 @@ class App:
             tiles={"Last 5 min": fmt_num(rolling), "Mesos / hr": fmt_num(m.per_hour(el)), "Elapsed": fmt_dur(el)},
             details={"% / hr": f"{rate / t.req * 100:.2f}%" if rate and t.req else "\u2014",
                      **{name: fmt_pct_gained(t.pct_in_last(sec), sec) for sec, name in PCT_WINDOWS},
-                     "Gained": f"{fmt_short(t.gained)}{f'  (+{t.levels} lvl)' if t.levels else ''}",
                      "Current": f"{fmt_num(shown[0])} [{shown[1]:.2f}%]" if shown else "\u2014",
-                     "Mesos": mesos, "Mesos / 5 min": fmt_num(m.per_5min(el))},
+                     "Mesos": mesos},
             state=state, state_text=state_text)
         waiting = self.session.waiting
         self.session.tick(now)

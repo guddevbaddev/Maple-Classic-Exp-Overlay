@@ -16,7 +16,7 @@ This copy doesn't connect to the original author's best-maps website: it never s
 
 - **EXP per hour**, for your whole session and for the last 5 minutes
 - **How long until your next level**, right under your EXP/hr (for example "Lv 31 in 36 min")
-- **How much of a level you gained** in the last 5, 15 and 30 minutes and the last hour (under **Details**). Paused time doesn't count. Until you've tracked that long, it shows what you've gained so far ("2.40% so far").
+- **How much of a level you gained** in the last 5 and 15 minutes and the last hour (under **Details**). Paused time doesn't count. Until you've tracked that long, it shows what you've gained so far ("2.40% so far").
 - **Mesos per hour**, read from your inventory
 - **A log of every map you farm**: your EXP/hr and mesos/hr there, at which level and class, solo or in a party
 
