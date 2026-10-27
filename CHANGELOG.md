@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.16-beta
+
+**Changed**
+- **Details is shorter:** "% last 30 min", "Gained" and "Mesos / 5 min" are gone. It shows % / hr, % in the last 5 and 15 minutes and the last hour, your current EXP and your mesos.
+
 ## 0.9.15-beta
 
 **Fixed**
