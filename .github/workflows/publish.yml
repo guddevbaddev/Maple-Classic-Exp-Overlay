@@ -1,0 +1,110 @@
+# Publishes a release the Build workflow drafted, so players get it (the overlay's update check
+# only sees published releases). Run it from the Actions tab ("Publish", "Run workflow") with
+# the version's tag, e.g. v0.9.19-beta.
+#
+# It only publishes a draft that's complete, and checks that first:
+# - the tag is on main's history (built from what was merged, nothing else);
+# - the draft has the Windows zip, the Mac zip and SHA256SUMS.txt, and each zip's SHA-256 is
+#   the one SHA256SUMS.txt lists (what Update now checks before installing anything);
+# - the draft's notes still say "(Notes to come.)": they're replaced with that version's part of
+#   CHANGELOG.md, at the tag. Notes someone already wrote are kept as they are.
+# A release that's already published is never changed from here.
+#
+# Actions are pinned to exact commits (a version tag can be moved; a commit can't).
+name: Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "The release to publish (the draft's tag, e.g. v0.9.19-beta)"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write             # publishing the release
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ inputs.tag }}
+    steps:
+      - name: The tag looks like a version
+        shell: bash
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta)?$ ]]; then
+            echo "::error::'$TAG' isn't a version tag like v0.9.19-beta."
+            exit 1
+          fi
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0          # (to check the tag is on main)
+      - name: The tag is on main
+        shell: bash
+        run: |
+          git fetch --quiet origin "refs/tags/$TAG:refs/tags/$TAG"
+          if ! git merge-base --is-ancestor "refs/tags/$TAG" origin/main; then
+            echo "::error::$TAG isn't on main's history. Only releases built from main are published."
+            exit 1
+          fi
+      - name: The draft is complete, and each zip is the one SHA256SUMS.txt lists
+        shell: bash
+        run: |
+          state=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null || echo none)
+          if [ "$state" = "none" ]; then
+            echo "::error::There's no release $TAG. Run Build on main with \"release\" ticked first."
+            exit 1
+          fi
+          if [ "$state" != "true" ]; then
+            echo "::error::$TAG is already published. Nothing to do."
+            exit 1
+          fi
+          win="Maple-Classic-Exp-Overlay-$TAG.zip"
+          mac="Maple-Classic-Exp-Overlay-$TAG-mac.zip"
+          assets=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+          for name in "$win" "$mac" SHA256SUMS.txt; do
+            if ! grep -qxF "$name" <<< "$assets"; then
+              echo "::error::The draft has no $name yet (it has: $(echo $assets)). Wait for Build to finish, or run its Mac job again."
+              exit 1
+            fi
+          done
+          mkdir check
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir check \
+            --pattern "$win" --pattern "$mac" --pattern SHA256SUMS.txt
+          cd check
+          for name in "$win" "$mac"; do
+            if ! grep -q " \*\?$name\$" SHA256SUMS.txt; then
+              echo "::error::SHA256SUMS.txt doesn't list $name, so Update now couldn't check it."
+              exit 1
+            fi
+          done
+          sha256sum -c SHA256SUMS.txt
+      - name: Notes from CHANGELOG.md, if none were written
+        shell: bash
+        run: |
+          body=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body)
+          if ! grep -qF '(Notes to come.)' <<< "$body"; then
+            echo "The draft's notes were written already: kept as they are."
+            exit 0
+          fi
+          version="${TAG#v}"
+          git show "refs/tags/$TAG:CHANGELOG.md" > changelog.md
+          # That version's section: from its heading to the next version's (without either heading).
+          awk -v head="## $version" '$0 == head {on = 1; next} on && /^## / {exit} on {print}' changelog.md > section.md
+          if ! grep -q '[^[:space:]]' section.md; then
+            echo "::warning::CHANGELOG.md has no section for $version at $TAG: the notes stay \"(Notes to come.)\"."
+            exit 0
+          fi
+          # (the section, then everything from the draft's "---" line on: the download checks)
+          { sed -e '/./,$!d' section.md; echo; printf '%s\n' "$body" | sed -n '/^---/,$p'; } > notes.md
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
+      - name: Publish
+        shell: bash
+        run: |
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+          echo "Published $TAG: $(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json url --jq .url)"
