@@ -4182,9 +4182,10 @@ class App:
         return icons[key]
 
     def _potion_tiles(self):
-        """What the HP and MP potion tiles show: for each, the potion of that kind on the quickslot
-        that was used the most this session (or the one seen), how many are left, how many are
-        used an hour and what they cost an hour (over the time tracked, once it's been a minute)."""
+        """What the HP and MP potion tiles show, for each kind: its potions on the quickslot, the
+        one used most first (then the one with fewest left), how many of each are left, and how
+        many of them all are used an hour and what they cost an hour (over the time tracked, once
+        it's been a minute). The count is in the tile's colour when any of them is down to Warn at."""
         p, el, prices = self.potions, self.tracker.elapsed(), self.potion_prices()
         kinds = {c["key"]: c.get("kind", "hp") for c in self.reader.quickslot.catalog}
         shown = {}
@@ -4194,18 +4195,22 @@ class App:
                 shown[kind] = dict(icon=None, title=None, value="\u2014",
                                    sub="Not on quickslot" if p.seen or self.tracker.req else "")
                 continue
-            key = max(keys, key=lambda k: (p.used.get(k, 0), -p.counts[k]))
-            used = p.used.get(key, 0)
+            keys.sort(key=lambda k: (-p.used.get(k, 0), p.counts[k]))
+            used = sum(p.used.get(k, 0) for k in keys)
             if used and el >= 60:
                 per_hour = used / el * 3600
-                cost = per_hour * prices.get(key, 0)
+                cost = sum(p.used.get(k, 0) * prices.get(k, 0) for k in keys) / el * 3600
                 money = fmt_num(cost) if cost < 10_000 else fmt_short(cost)
                 sub = f"{fmt_num(per_hour)}/hr \u00b7 -{money}/hr" if cost else f"{fmt_num(per_hour)}/hr"
             else:
                 sub = f"{used} used" if used else "None used yet"
-            shown[kind] = dict(icon=self._potion_icon(key), title=self.potion_name(key),
-                               value=f"{fmt_num(p.counts[key])} left", sub=sub,
-                               low=p.counts[key] <= self.cfg["low_potions"])
+            # Two or more: short names ("Orange + White"), and each one's count in the same order.
+            short = lambda k: self.potion_name(k).replace(" Potion", "")
+            title = self.potion_name(keys[0]) if len(keys) == 1 else " + ".join(short(k) for k in keys)
+            shown[kind] = dict(icon=self._potion_icon(keys[0]), title=title,
+                               value=" \u00b7 ".join(fmt_num(p.counts[k]) for k in keys) + " left", sub=sub,
+                               low=any(p.counts[k] <= self.cfg["low_potions"] for k in keys),
+                               more=tuple(i for i in map(self._potion_icon, keys[1:]) if i is not None))
         return shown
 
     def potion_name(self, key):

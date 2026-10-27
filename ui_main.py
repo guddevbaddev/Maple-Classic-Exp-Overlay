@@ -250,7 +250,10 @@ class Hero(tk.Canvas):
         self._digits, self._gphotos = [], {}
         self._spark = self.create_image(0, 0, anchor="nw")
         self._barimg = self.create_image(0, 0, anchor="nw")
-        self._eta = self.create_text(0, 0, anchor="nw", text="", fill="#e9c15a", font=theme.font("bold", 13))
+        # "Lv 51 in 1 h 37 min": the level in gold, then the time, bigger and white, to find at a glance
+        self._eta = self.create_text(0, 0, anchor="sw", text="", fill="#e9c15a", font=theme.font("bold", 12))
+        self._eta_in = self.create_text(0, 0, anchor="sw", text="", fill=TEXT_DIM, font=theme.font("semibold", 11))
+        self._eta_time = self.create_text(0, 0, anchor="sw", text="", fill=TEXT, font=theme.font("extra", 15))
         self._pct = self.create_text(0, 0, anchor="ne", text="", fill=TEXT_DIM, font=theme.font("semibold", 12))
         # compact mode has no tiles, so mesos/hr sits under the number (value, then its unit)
         self._mval = self.create_text(0, 0, anchor="nw", text="", fill=TEXT, font=theme.font("bold", 12), state="hidden")
@@ -291,7 +294,8 @@ class Hero(tk.Canvas):
         self._bar_y = 119 if self.compact else 148
         self.coords(self._mval, g.px(19), g.px(96))
         self.coords(self._barimg, g.px(18), g.px(self._bar_y) - g.px(6))
-        self.coords(self._eta, g.px(18), g.px(self._bar_y + 16))
+        self._eta_base = g.px(self._bar_y + 35)                   # (the three parts share a baseline)
+        self.coords(self._eta, g.px(18), self._eta_base)
         self.coords(self._pct, g.px(INNER - 18), g.px(self._bar_y + 16))
         self.coords(self._spark, g.px(8), g.px(96))
 
@@ -333,7 +337,14 @@ class Hero(tk.Canvas):
             self.itemconfigure(self._barimg, image=self._photos["bar"])
             self.itemconfigure(self._pct, text=f"{m['pct']:.1f}%" if m["pct"] is not None else "")
         if every or "eta" in changed:
-            self.itemconfigure(self._eta, text=m["eta"])
+            level, _, time_ = (m["eta"] or "").partition(" in ")
+            self.itemconfigure(self._eta, text=level)
+            self.itemconfigure(self._eta_in, text="in" if time_ else "")
+            self.itemconfigure(self._eta_time, text=time_)
+            x = (self.bbox(self._eta) or (0, 0, g.px(18), 0))[2] + g.px(6)
+            self.coords(self._eta_in, x, self._eta_base - g.px(1))
+            x = (self.bbox(self._eta_in) or (0, 0, x, 0))[2] + g.px(6) if time_ else x
+            self.coords(self._eta_time, x, self._eta_base + g.px(1))
         if every or "delta" in changed or "rate" in changed:
             d = m["delta"]
             if d is None or not m["rate"]:
@@ -381,8 +392,9 @@ class Tile(tk.Canvas):
 
 
 class PotionTile(tk.Canvas):
-    """A potion on the quickslot: its picture on a coloured square (red for HP, blue for MP),
-    how many are left, and how many were used this session and what they cost."""
+    """The HP (or MP) potions on the quickslot: the picture of the one used most on a coloured
+    square (red for HP, blue for MP), with a small picture of the next in its corner when there
+    are more (or "+2" for three or more), how many of each are left, and how many are used an hour."""
 
     LOOK = {"hp": ("#2a171b", "#1a1013", "#5a2229", "#3b161b", "#ff8a7a"),     # panel, square, accent
             "mp": ("#161d2e", "#10141e", "#223761", "#17264a", "#8ab4ff")}
@@ -400,6 +412,10 @@ class PotionTile(tk.Canvas):
         self.create_image(0, 0, anchor="nw", image=self._photo)
         self._icon_photo, self._icon_key = None, None
         self._icon = self.create_image(g.px(31), g.px(37), anchor="center")
+        self._more_photo = None
+        self._more = self.create_image(g.px(45), g.px(51), anchor="center")      # the next one, small
+        self._more_t = self.create_text(g.px(46), g.px(51), anchor="center", text="", fill=TEXT,
+                                        font=theme.font("bold", 9))
         self._none = self.create_text(g.px(31), g.px(37), anchor="center", text=kind.upper(), fill=self.accent,
                                       font=theme.font("bold", 11))
         x = g.px(TEXT_X := 60)
@@ -421,21 +437,37 @@ class PotionTile(tk.Canvas):
             text += "\u2026"
         self.itemconfigure(item, text=text, font=font)
 
-    def set(self, icon=None, title=None, value="\u2014", sub="", low=False):
-        """icon: the potion's picture (a PIL image) or None; title: its name; value: e.g. "14 left";
-        sub: e.g. "12 used \u00b7 -1,800"; low: down to the "Warn at" number (shown in the accent)."""
-        key = (id(icon), self.t.px(28))
+    def _picture(self, icon, size):
+        pic = icon.copy()
+        pic.thumbnail((size, size), Image.LANCZOS)
+        return self.t.gfx.photo(pic)
+
+    def set(self, icon=None, title=None, value="\u2014", sub="", low=False, more=()):
+        """icon: the potion's picture (a PIL image) or None; title: its name (or names); value: e.g.
+        "14 left" (or "14 \u00b7 120 left"); sub: e.g. "27/hr \u00b7 -4,050/hr"; low: down to the "Warn at"
+        number (shown in the accent); more: the pictures of the other potions of this kind."""
+        key = (id(icon), tuple(id(m) for m in more), self.t.px(28))
         if key != self._icon_key:
             self._icon_key = key
+            big = self.t.px(28 if not more else 24)
             if icon is None:
                 self._icon_photo = None
                 self.itemconfigure(self._icon, image="")
             else:
-                pic = icon.copy()
-                size = self.t.px(28)
-                pic.thumbnail((size, size), Image.LANCZOS)
-                self._icon_photo = self.t.gfx.photo(pic)
+                self._icon_photo = self._picture(icon, big)
                 self.itemconfigure(self._icon, image=self._icon_photo)
+            g = self.t.gfx
+            # (with more than one, the main one moves up-left to make room for the next in the corner)
+            self.coords(self._icon, g.px(28 if more else 31), g.px(34 if more else 37))
+            if len(more) == 1:
+                self._more_photo = self._picture(more[0], self.t.px(17))
+                self.itemconfigure(self._more, image=self._more_photo, state="normal")
+                self.itemconfigure(self._more_t, state="hidden")
+            else:
+                self._more_photo = None
+                self.itemconfigure(self._more, image="", state="hidden")
+                self.itemconfigure(self._more_t, text=f"+{len(more)}" if more else "",
+                                   state="normal" if more else "hidden")
             self.itemconfigure(self._none, state="hidden" if icon is not None else "normal")
         self._fit(self._title, (title or f"{self.kind.upper()} POTION").upper(), "semibold", (9, 8))
         self._fit(self._v, value, "bold", (16, 14, 12))
