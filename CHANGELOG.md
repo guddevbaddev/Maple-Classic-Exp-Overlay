@@ -6,6 +6,7 @@
 - **Mac: "Couldn't check for updates"**, even when connected. The Mac app looked for the internet's security certificates where it was built, not on your Mac, so it couldn't reach GitHub at all, and Update now never worked on a Mac. It now uses the ones macOS has. (Mac players on 0.9.14 or older have to download this version by hand once; from then on Update now works.) When a check fails, the message now says why, and errors.log has the details.
 
 **New**
+- **The version number** is shown at the bottom of the main window (small, bottom right), so you can tell at a glance which one you have. (Not in compact mode.)
 - **Settings > Pause the timer when no EXP comes in:** turn it off and the timer keeps running when you stop killing (picking up drops, gathering items), without jumping back, until you press Pause. On (as before), it pauses after the time you set and takes that idle time back off the clock.
 
 ## 0.9.14-beta

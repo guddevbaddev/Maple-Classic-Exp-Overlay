@@ -544,6 +544,14 @@ app.update_win.destroy()
 m.updater.installed_location, m.updater.prepare, m.updater.start_install, app.close = (real_where, real_prepare,
                                                                                         real_install, real_close)
 
+# ---- the version, at the bottom of the main window (not in compact mode)
+root.update()
+check(f"the version shows at the bottom ({app.view.version.cget('text')})",
+      app.view.version.cget("text") == f"v{m.VERSION}" and app.view.version.winfo_ismapped())
+app.set_compact(True); root.update()
+check("...but not in compact mode", not app.view.version.winfo_ismapped())
+app.set_compact(False); root.update()
+
 # ---- high levels: the EXP bar shows only the %, so the level is asked once and counted up after
 asked, real_ask = [], m.simpledialog.askinteger
 m.simpledialog.askinteger = lambda *a, **k: (asked.append(k), 62)[1]

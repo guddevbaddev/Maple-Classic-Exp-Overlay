@@ -67,7 +67,7 @@ PLATFORM.setup_process()
 cv2.setNumThreads(1)
 
 VERSION = "0.9.15-beta"
-WINDOW_TITLE = "Maple Classic Exp Overlay"    # the version is shown in Settings
+WINDOW_TITLE = "Maple Classic Exp Overlay"    # the version is shown at the bottom, and in Settings
 OLD_TITLES = ("Maple EXP/hr",)               # what versions before 0.9.3 were called
 
 # Files that come with the program (inside the .exe when packaged), the folder it runs from,
@@ -2877,7 +2877,8 @@ class App:
         callbacks = dict(settings=self.open_settings, compact=lambda: self.set_compact(not self.compact),
                          log=self.toggle_log, start=self.toggle, reset=self.reset, logging=self._logging_clicked,
                          menu=self._open_menu, share=self.share_card, details=self._details_changed)
-        self.view = self.main = MainView(self.root, self.theme, callbacks, details=bool(self.cfg.get("details")))
+        self.view = self.main = MainView(self.root, self.theme, callbacks, details=bool(self.cfg.get("details")),
+                                         version=f"v{VERSION}")
         self.view.grid(row=0, column=0, sticky="n")
         if self.compact:
             self.view.set_compact(True)
