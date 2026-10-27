@@ -379,6 +379,62 @@ class Tile(tk.Canvas):
             self.itemconfigure(self._v, text=value, font=font)
 
 
+class Supplies(tk.Canvas):
+    """Potions (and ammo) used: one line each, then what they cost per hour and the mesos left
+    over after paying for them. Hidden until something on the hotbar is used."""
+
+    ROW = 26
+
+    def __init__(self, parent, theme, on_click, bg=INK):
+        self.t, self.on_click, self.bg = theme, on_click, bg
+        super().__init__(parent, width=theme.px(INNER), height=1, bg=bg, highlightthickness=0, bd=0)
+        self._shown = None
+        self.bind("<Button-1>", self._clicked)
+
+    def set(self, title, rows, cost, delta):
+        """rows: [(key, name, used, cost)] (cost "" if unknown); cost, delta: per-hour text
+        (delta: (text, +1 / -1 / 0) for its colour)."""
+        shown = (title, tuple(rows), cost, delta)
+        if shown == self._shown:
+            return
+        self._shown = shown
+        g, px = self.t.gfx, self.t.px
+        self.delete("all")
+        self._hits = []                                       # (top, bottom, key) of each row, in pixels
+        h = 30 + self.ROW * len(rows) + 10 + 2 * self.ROW + 6
+        self.configure(height=px(h))
+        self._photo = g.photo(g.panel(px(INNER), px(h), 14, "#191c25", "#13151b", 0.09))
+        self.create_image(0, 0, anchor="nw", image=self._photo)
+        self.create_text(px(14), px(16), anchor="w", text=title.upper(), fill=TEXT_DIM, font=self.t.font("semibold", 9))
+        self.create_text(px(INNER - 14), px(16), anchor="e", text="USED  ·  MESOS", fill=TEXT_FAINT,
+                         font=self.t.font("semibold", 9))
+        y = 30
+        for key, name, used, row_cost in rows:
+            mid = px(y + self.ROW / 2)
+            self._hits.append((px(y), px(y + self.ROW), key))
+            ask = name.endswith("?")                          # not named yet: click to say what it is
+            self.create_text(px(14), mid, anchor="w", text=name, fill=GOLD_TOP if ask else TEXT,
+                             font=self.t.font("regular", 11.5))
+            self.create_text(px(INNER - 14), mid, anchor="e", text=f"{used}  ·  {row_cost or 'set price'}",
+                             fill=TEXT if row_cost else GOLD_TOP, font=self.t.font("bold", 11.5))
+            y += self.ROW
+        y += 4
+        self.create_line(px(14), px(y), px(INNER - 14), px(y), fill="#232733")
+        y += 6
+        for label, (value, sign) in (("Supplies / hr", (cost, -1 if cost not in ("", "\u2014") else 0)),
+                                     ("Meso delta / hr", delta)):
+            mid = px(y + self.ROW / 2)
+            self.create_text(px(14), mid, anchor="w", text=label, fill=TEXT_DIM, font=self.t.font("regular", 11.5))
+            col = TEXT if label == "Supplies / hr" else UP if sign > 0 else DOWN if sign < 0 else TEXT
+            self.create_text(px(INNER - 14), mid, anchor="e", text=value, fill=col, font=self.t.font("bold", 12.5))
+            y += self.ROW
+
+    def _clicked(self, e):
+        for top, bottom, key in getattr(self, "_hits", []):
+            if top <= e.y < bottom:
+                self.on_click(key)
+
+
 class Details(tk.Canvas):
     """The rest of the numbers, one line each, for when you want them."""
 
@@ -500,17 +556,21 @@ class MainView(tk.Frame):
 
         self.more_btn = Button(self, theme, text="Details", icon="down", kind="ghost", width=INNER, height=30, radius=10,
                                size=12, weight="semibold", command=self._toggle_details, bg=bg)
-        self.more_btn.grid(row=3, column=0, padx=g.px(SIDE), pady=pad(0, 4))
+        self.supplies = Supplies(self, theme, lambda key: cb["supply"](key), bg)
+        self.supplies.grid(row=3, column=0, padx=g.px(SIDE), pady=pad(0, 6))
+        self.supplies.grid_remove()
+        self.supplies_on = False
+        self.more_btn.grid(row=4, column=0, padx=g.px(SIDE), pady=pad(0, 4))
         self.details_open = details
         self.details = Details(self, theme, ("% / hr", "% last 5 min", "% last 15 min", "% last hour",
                                              "Current", "Mesos"), bg)
-        self.details.grid(row=4, column=0, padx=g.px(SIDE), pady=pad(0, 8))
+        self.details.grid(row=5, column=0, padx=g.px(SIDE), pady=pad(0, 8))
         if not details:
             self.details.grid_remove()
         self.more_btn.set(icon="up" if details else "down")
 
         controls = tk.Frame(self, bg=bg)
-        controls.grid(row=5, column=0, padx=g.px(SIDE - 8), pady=pad(0, 2), sticky="we")
+        controls.grid(row=6, column=0, padx=g.px(SIDE - 8), pady=pad(0, 2), sticky="we")
         controls.columnconfigure(0, weight=1)
         self.start_btn = Button(controls, theme, text="Start", icon="play", kind="primary", width=INNER - 8 - 52 - 52, height=46,
                                 radius=14, size=14, weight="bold", command=cb["start"], bg=bg)
@@ -521,7 +581,7 @@ class MainView(tk.Frame):
         self.menu_btn.grid(row=0, column=2, padx=(g.px(4), 0))
 
         foot = tk.Frame(self, bg=bg)
-        foot.grid(row=6, column=0, padx=g.px(SIDE), pady=pad(6, 0), sticky="we")
+        foot.grid(row=7, column=0, padx=g.px(SIDE), pady=pad(6, 0), sticky="we")
         foot.columnconfigure(0, weight=1)
         self.logging = Toggle(foot, theme, "Log this run", True, cb["logging"], bg, alt="Not logging")
         self.logging.grid(row=0, column=0, sticky="w")
@@ -529,11 +589,11 @@ class MainView(tk.Frame):
                                 command=cb["share"], tip="A picture of this session to paste into Discord", bg=bg)
         self.share_btn.grid(row=0, column=1, sticky="e")
         self.message = Message(self, theme, bg)
-        self.message.grid(row=7, column=0, padx=g.px(SIDE + 2), pady=pad(2, 14 if not version else 4), sticky="we")
+        self.message.grid(row=8, column=0, padx=g.px(SIDE + 2), pady=pad(2, 14 if not version else 4), sticky="we")
         self.foot_widgets = [self.tiles_row, self.more_btn, self.details, self.reset_btn, self.menu_btn, foot]
         if version:                       # which version this is, small, at the very bottom
             self.version = tk.Label(self, text=version, bg=bg, fg=TEXT_FAINT, font=theme.font("regular", 9), anchor="e")
-            self.version.grid(row=8, column=0, padx=g.px(SIDE + 2), pady=pad(0, 10), sticky="we")
+            self.version.grid(row=9, column=0, padx=g.px(SIDE + 2), pady=pad(0, 10), sticky="we")
             self.foot_widgets.append(self.version)
 
     # ---- showing things
@@ -552,6 +612,14 @@ class MainView(tk.Frame):
             self.pill.set(m["state"], m.get("state_text", ""))
         if "message" in m:
             self.message.set(m["message"], self.t.px(INNER - 6))
+        if "supplies" in m:
+            on = m["supplies"] is not None
+            if on:
+                self.supplies.set(*m["supplies"])
+            if on != self.supplies_on:
+                self.supplies_on = on
+                if not self.compact:
+                    (self.supplies.grid if on else self.supplies.grid_remove)()
 
     def _toggle_details(self):
         self.details_open = not self.details_open
@@ -563,10 +631,10 @@ class MainView(tk.Frame):
     def set_compact(self, on):
         self.compact = on
         self.hero.set_compact(on)
-        for w in self.foot_widgets:
+        for w in self.foot_widgets + [self.supplies]:
             if on:
                 w.grid_remove()
-            elif w is not self.details or self.details_open:
+            elif (w is not self.details or self.details_open) and (w is not self.supplies or self.supplies_on):
                 w.grid()
         self.start_btn.resize(INNER - 8 if on else INNER - 8 - 52 - 52)
         self.compact_btn.set(icon="grow" if on else "shrink")

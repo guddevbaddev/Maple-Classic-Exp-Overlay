@@ -433,6 +433,50 @@ check("damaged settings fall back to the defaults",
 m.CONFIG_PATH.write_text("[1, 2", encoding="utf-8")
 check("an unreadable settings file gives the defaults", m.load_config()["topmost"] is True)
 
+# ---- supplies: potions (and ammo) used from the hotbar, and what they cost
+import supplies as sup  # noqa: E402
+check("a map's nearest town comes from its name",
+      sup.nearest_town("Ant Tunnel I") == "Sleepywood" and sup.nearest_town("Wild Boar Land II") == "Perion"
+      and sup.nearest_town("The Swamp of Despair I") == "Kerning City" and sup.nearest_town("Somewhere new") is None)
+check("prices: the town's shop, else the usual price; the player's own price wins",
+      sup.price("Blue Potion", "El Nath", {}) == 220 and sup.price("Blue Potion", "Perion", {}) == 240
+      and sup.price("Blue Potion", None, {}) == 240 and sup.price("Orange Potion", "Orbis", {"Orange Potion": 120}) == 120
+      and sup.price("Mana Elixir", "Perion", {}) is None)
+st = sup.SupplyTracker()
+el = 0.0
+def look(counts, running=True):
+    global el
+    el += 5
+    st.observe(counts, el, running)
+for n in (587, 587, 586, 586, 584, 584):                  # an orange potion here and there
+    look({0: (n, "orange"), 2: (74, "blue")})
+check(f"potions used are counted once two readings agree ({st.used})", st.used == {"orange": 3})
+look({0: (583, "orange"), 2: (74, "blue")})               # one misread...
+look({0: (586, "orange"), 2: (74, "blue")})               # ...back where it was: not counted
+look({0: (584, "orange"), 2: (74, "blue")})
+look({0: (584, "orange"), 2: (74, "blue")})
+check(f"a one-off misread isn't counted ({st.used.get('orange')})", st.used.get("orange") == 3)
+for n in (884, 884, 883, 883):                            # bought 300 more: a fresh start, then one used
+    look({0: (n, "orange"), 2: (74, "blue")})
+check(f"buying more isn't 'used', and counting carries on after ({st.used.get('orange')})", st.used.get("orange") == 4)
+for n in (12, 12):                                        # most moved to the inventory
+    look({0: (n, "orange"), 2: (74, "blue")})
+check("moving most of a stack away isn't 'used'", st.used.get("orange") == 4)
+for n in (74, 74):                                        # a different item put in the slot
+    look({0: (n, "white"), 2: (74, "blue")})
+check("a different item in a slot starts afresh", st.used.get("white") is None and st.used.get("orange") == 4)
+for n in (73, 73):
+    look({0: (n, "white"), 2: (74, "blue")}, running=False)
+check("nothing counts while paused", "white" not in st.used)
+st = sup.SupplyTracker()
+el = 0.0
+for i in range(2 * 60 * 60 // 5):                         # 2 hours: one potion a minute
+    n = 1000 - i // 12
+    look({0: (n, "orange")})
+used = st.used_in_last("orange", 1800, el)
+check(f"used in the last 30 minutes ({used})", used is not None and 29 <= used[0] <= 31 and used[1] == 1800)
+check(f"...and per hour ({st.per_hour('orange', el):.0f})", 59 <= st.per_hour("orange", el) <= 61)
+
 # ---- mesos
 t = m.MesoTracker()
 for v in (9820, 9820):

@@ -552,6 +552,36 @@ app.set_compact(True); root.update()
 check("...but not in compact mode", not app.view.version.winfo_ismapped())
 app.set_compact(False); root.update()
 
+# ---- supplies: hidden until something on the hotbar is used, then what it costs and the meso delta
+check("no supplies panel before anything is used", app._supplies_view(0, None) is None)
+sup = app.session.supply
+for i in range(0, 1200, 5):
+    sup.observe({0: (900 - i // 40, "orange"), 1: (300 - i // 300, "mystery")}, i, True)
+app.map_name, app.cfg["supply_names"] = "Wild Boar Land II", {"orange": "Orange Potion"}
+title, rows, cost, delta = app._supplies_view(1195, 100_000)
+check(f"supplies: per item, with the nearest town's price ({title}: {rows})",
+      "Perion" in title and rows[0][1:] == ("Orange Potion", "29 so far", "4,350") and rows[1][1] == "What's this?")
+check("...no total until everything has a price", cost == "\u2014" and delta == ("\u2014", 0))
+app.name_supply("mystery")
+root.update()
+names = app.supply_win
+combo = next(c for f in [names] + names.winfo_children() for c in f.winfo_children() if c.winfo_class() == "TCombobox")
+combo.set("Blue Potion")
+root.update()
+names.save()
+root.update()
+title, rows, cost, delta = app._supplies_view(1195, 100_000)
+check(f"naming it fills in its shop price, and the totals show ({rows[1]}, {cost}, {delta})",
+      rows[1][1] == "Blue Potion" and rows[1][3] == "720" and cost != "\u2014" and delta[1] == 1)
+app.view.show(supplies=(title, rows, cost, delta))
+root.update()
+check("the panel shows under the tiles", app.view.supplies.winfo_ismapped())
+app.set_compact(True); root.update()
+check("...but not in compact mode", not app.view.supplies.winfo_ismapped())
+app.set_compact(False); root.update()
+app.session.reset()
+app.cfg["supply_names"] = {}
+
 # ---- high levels: the EXP bar shows only the %, so the level is asked once and counted up after
 asked, real_ask = [], m.simpledialog.askinteger
 m.simpledialog.askinteger = lambda *a, **k: (asked.append(k), 62)[1]

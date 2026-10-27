@@ -51,6 +51,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageTk
 
 import ocr
 import report
+import supplies
 from platforms import create_platform, hotkey_text, parse_hotkey
 from report import Health, Recent
 from share_card import CardStats, make_card
@@ -88,6 +89,7 @@ POLL_SECONDS = 1.5          # how often to read the EXP bar
 ROLLING_WINDOW = 300        # seconds used for the "last 5 min" rate
 PCT_WINDOWS = ((300, "% last 5 min"), (900, "% last 15 min"),
                (3600, "% last hour"))   # (seconds, name) of the "% of a level gained in the last ..." lines
+SUPPLY_WINDOWS = (900, 1800, 3600)   # Settings > potions counted per: 15, 30 or 60 minutes
 SEARCH_STRIP = 0.22         # bottom part of the game window searched for the EXP text
 LOG_PATH = DATA_DIR / "exp_log.json"
 LOG_TEXT_PATH = DATA_DIR / "exp_log.txt"
@@ -103,7 +105,8 @@ OUTLINE_EAGER = 3           # ...in the first minute after starting or Reset, wh
 EAGER_SECONDS = 60          # opened (about 60-170 ms a search, at 900p-1440p)
 DEFAULTS = {"gap_seconds": 15, "transparency": 0, "topmost": True,
             "check_updates": True, "skip_version": "", "ui_scale": 100, "compact": False, "hotkeys_on": True,
-            "details": False, "level": 0, "auto_pause": True}       # level: for a bar that shows only the % (0: unknown)
+            "details": False, "level": 0, "auto_pause": True,
+            "supply_window": 1800, "supply_names": {}, "supply_prices": {}}       # level: for a bar that shows only the % (0: unknown)
 # Settings > Size, in %: only these, so the window can't get too small to read or use.
 UI_SCALES = (60, 70, 80, 90, 100, 110, 125, 150, 175, 200)
 MAX_TRANSPARENCY = 40       # %: more and the window can fade out of sight, with Settings in it
@@ -234,6 +237,10 @@ def load_config():
         cfg["ui_scale"] = 100
     if not 0 <= cfg["level"] <= len(EXP_TABLE):
         cfg["level"] = 0
+    if cfg["supply_window"] not in SUPPLY_WINDOWS:
+        cfg["supply_window"] = 1800
+    cfg["supply_names"] = {k: v for k, v in cfg["supply_names"].items() if isinstance(v, str) and v}
+    cfg["supply_prices"] = {k: v for k, v in cfg["supply_prices"].items() if type(v) is int and v >= 0}
     keys = cfg.get("hotkeys") if isinstance(cfg.get("hotkeys"), dict) else {}
     cfg["hotkeys"] = {a: keys[a] if a in keys and (keys[a] == "" or parse_hotkey(keys[a])) else k
                       for a, k in DEFAULT_HOTKEYS.items()}            # "" is a hotkey turned off
@@ -1174,8 +1181,8 @@ def find_party_bars(bgr, gh, hsv=None):
 
 # pct: the % of a bar that shows only that (high levels); the App turns it into candidates
 Reading = namedtuple("Reading", "where candidates confident text image boxes map note "
-                                 "mesos mesos_image mesos_boxes party mesos_at pct",
-                     defaults=((), False, "", None, (), None, None, None, None, (), None, None, None))
+                                 "mesos mesos_image mesos_boxes party mesos_at pct supplies supply_icons",
+                     defaults=((), False, "", None, (), None, None, None, None, (), None, None, None, None, None))
 
 
 def _view(img, lay):
@@ -2071,7 +2078,7 @@ class Session:
     """
 
     def __init__(self, gap):
-        self.exp, self.meso = ExpTracker(), MesoTracker()
+        self.exp, self.meso, self.supply = ExpTracker(), MesoTracker(), supplies.SupplyTracker()
         self.gap = gap
         self.on = False             # Start was pressed (and Pause wasn't)
         self.waiting = None         # paused by itself: "idle" or "map"
@@ -2104,6 +2111,7 @@ class Session:
     def reset(self):
         self.exp.reset()
         self.meso.reset()
+        self.supply.reset()
         self.on, self.waiting, self.map, self.last_gain = False, None, None, None
 
     def _wait(self, why):
@@ -2124,6 +2132,7 @@ class Session:
             if self.map and self.here and self.here != self.map and not self.pq:
                 t.new_session()             # a different map: its own numbers
                 self.meso.reset()
+                self.supply.reset()
                 self.map = self.here
             self.waiting = None
             self.last_gain = now
@@ -2782,6 +2791,7 @@ class App:
         self.session = Session(self.cfg["gap_seconds"])
         self.session.auto_pause = self.cfg["auto_pause"]
         self.tracker, self.meso = self.session.exp, self.session.meso
+        self.supply_icons = {}              # icon fingerprint -> picture of it, to show when naming it
         self.party = 1
         self._party_seen = (None, 0)
         self.last_mesos = None
@@ -2876,7 +2886,8 @@ class App:
         self.theme = Theme(self.root, self._px_per_pt * 0.75, ASSETS / "fonts", self._own_fonts, PLATFORM.font)
         callbacks = dict(settings=self.open_settings, compact=lambda: self.set_compact(not self.compact),
                          log=self.toggle_log, start=self.toggle, reset=self.reset, logging=self._logging_clicked,
-                         menu=self._open_menu, share=self.share_card, details=self._details_changed)
+                         menu=self._open_menu, share=self.share_card, details=self._details_changed,
+                         supply=self.name_supply)
         self.view = self.main = MainView(self.root, self.theme, callbacks, details=bool(self.cfg.get("details")),
                                          version=f"v{VERSION}")
         self.view.grid(row=0, column=0, sticky="n")
@@ -2903,6 +2914,91 @@ class App:
             ("View capture", None, self.view_capture),
             ("PQ mode: on" if self.pq_mode else "PQ mode: off", None, self.toggle_pq)]
             + ([("Set your level...", None, self.ask_level)] if self.pct_only else []))
+
+    def _supplies_view(self, el, mesos_hr):
+        """What the supplies panel shows, or None (hidden) until something on the hotbar is used."""
+        sup = self.session.supply
+        used = sup.in_use()
+        if not used:
+            return None
+        window, town = self.cfg["supply_window"], supplies.nearest_town(self.map_name)
+        names, custom = self.cfg["supply_names"], self.cfg["supply_prices"]
+        rows, per_hour, known = [], 0.0, True
+        for icon in used[:5]:
+            name = names.get(icon)
+            price = supplies.price(name, town, custom) if name else None
+            got = sup.used_in_last(icon, window, el)
+            n = f"{got[0]:,}" + (" so far" if got[1] < window else "") if got else "\u2014"
+            cost = fmt_num(got[0] * price) if got and price is not None else ""
+            rows.append((icon, name or "What's this?", n, cost))
+            rate = sup.per_hour(icon, el)
+            if price is None:
+                known = False
+            elif rate is not None:
+                per_hour += rate * price
+        title = f"Supplies used / {window // 60} min" + (f" · {town} prices" if town else "")
+        cost_hr = fmt_num(per_hour) if known and sup.per_hour(used[0], el) is not None else "\u2014"
+        if cost_hr != "\u2014" and mesos_hr is not None:
+            delta = mesos_hr - per_hour
+            shown_delta = (("+" if delta >= 0 else "\u2212") + fmt_num(abs(delta)), 1 if delta >= 0 else -1)
+        else:
+            shown_delta = ("\u2014", 0)
+        return title, rows, cost_hr, shown_delta
+
+    def name_supply(self, icon):
+        """Clicked a supply's line: say what it is, and what one costs (the nearest town's shop
+        price is filled in when it's known)."""
+        town = supplies.nearest_town(self.map_name)
+        w = tk.Toplevel(self.root)
+        w.title("What's this?")
+        w.configure(bg=BG)
+        w.attributes("-topmost", bool(self.cfg["topmost"]))
+        w.transient(self.root)
+        th, px = self.theme, self.theme.px
+        body = tk.Frame(w, bg=BG)
+        body.pack(padx=px(22), pady=px(18))
+        pic = self.supply_icons.get(icon)
+        if pic is not None:
+            img = Image.fromarray(cv2.cvtColor(pic, cv2.COLOR_BGR2RGB))
+            img = img.resize((px(48), px(48) * img.height // max(1, img.width)), Image.NEAREST)
+            w._icon = ImageTk.PhotoImage(img)
+            tk.Label(body, image=w._icon, bg=BG).pack(anchor="w", pady=(0, px(8)))
+        text = dict(bg=BG, fg=FG, font=th.font("semibold", 12))
+        tk.Label(body, text="What is it?", **text).pack(anchor="w")
+        name = tk.StringVar(value=self.cfg["supply_names"].get(icon, ""))
+        ttk.Combobox(body, textvariable=name, values=supplies.ITEMS, width=28).pack(anchor="w", pady=(px(4), px(10)))
+        tk.Label(body, text="Price of one (mesos)", **text).pack(anchor="w")
+        price = tk.StringVar()
+
+        def fill_price(*_):
+            p = supplies.price(name.get().strip(), town, self.cfg["supply_prices"])
+            price.set("" if p is None else str(p))
+        name.trace_add("write", fill_price)
+        fill_price()
+        tk.Entry(price_box := tk.Frame(body, bg=BG), textvariable=price, width=12).pack(side="left")
+        tk.Label(price_box, text=f"  shop price in {town}" if town else "  (set your own if you buy cheaper)",
+                 bg=BG, fg=DIM, font=th.font("regular", 10)).pack(side="left")
+        price_box.pack(anchor="w", pady=(px(4), px(14)))
+
+        def save():
+            n = name.get().strip()
+            if n:
+                self.cfg["supply_names"][icon] = n
+                try:
+                    p = int(price.get().replace(",", "").strip())
+                except ValueError:
+                    p = None
+                if p is not None and p >= 0 and p != supplies.shop_price(n, town):
+                    self.cfg["supply_prices"][n] = p          # the player's own price for it
+                elif p is not None:
+                    self.cfg["supply_prices"].pop(n, None)    # the shop's: follows the town
+                save_config(self.cfg)
+            w.destroy()
+        Button(body, th, text="Save", kind="primary", width=96, height=36, radius=10, size=12,
+               command=save, bg=BG).pack(anchor="e")
+        w.bind("<Return>", lambda e: save())
+        w.save = save
+        self.supply_win = w
 
     def ask_level(self):
         """Asks the level, for an EXP bar that shows only the %. Kept, and counted up at each level-up."""
@@ -3423,6 +3519,23 @@ class App:
                command=lambda: gap_by(5), bg=BG).pack(side="left")
         tk.Label(gap_step, text="s", bg=BG, fg=DIM, font=th.font("regular", 11)).pack(side="left", padx=(px(6), 0))
         tk.Label(body, text="Pausing also restarts the 5-minute log timer.", **dim).pack(anchor="w", pady=(px(5), 0))
+        line = tk.Frame(body, bg=BG)
+        line.pack(fill="x", pady=(px(12), 0))
+        tk.Label(line, text="Count potions used per", **text).pack(side="left")
+        window = tk.StringVar(value=str(self.cfg["supply_window"] // 60))
+        win_step = tk.Frame(line, bg=BG)
+        win_step.pack(side="right")
+
+        def window_by(by):
+            i = SUPPLY_WINDOWS.index(int(window.get()) * 60) + by
+            if 0 <= i < len(SUPPLY_WINDOWS):
+                window.set(str(SUPPLY_WINDOWS[i] // 60))
+        Button(win_step, th, text="\u2212", kind="secondary", width=38, height=34, radius=10, size=15,
+               command=lambda: window_by(-1), bg=BG).pack(side="left")
+        tk.Label(win_step, textvariable=window, width=4, bg=BG, fg=FG, font=th.font("bold", 12)).pack(side="left")
+        Button(win_step, th, text="+", kind="secondary", width=38, height=34, radius=10, size=15,
+               command=lambda: window_by(1), bg=BG).pack(side="left")
+        tk.Label(win_step, text="min", bg=BG, fg=DIM, font=th.font("regular", 11)).pack(side="left", padx=(px(6), 0))
 
         self._section(body, "Window")
         transparency = tk.IntVar(value=int(self.cfg["transparency"]))
@@ -3475,6 +3588,7 @@ class App:
             self.cfg["topmost"] = bool(topmost.get())
             self.cfg["check_updates"] = bool(updates.get())
             self.cfg["auto_pause"] = self.session.auto_pause = bool(auto_pause.get())
+            self.cfg["supply_window"] = int(window.get()) * 60
             self._apply_window_settings()
             w.attributes("-topmost", self.cfg["topmost"])
             scale = int(size.get().rstrip("%"))
@@ -3484,7 +3598,7 @@ class App:
                 self.root.after(60, self._reopen_settings)        # (drawn again at the new size)
             save_config(self.cfg)
 
-        for var in (auto_pause, gap, transparency, topmost, updates, size):
+        for var in (auto_pause, gap, window, transparency, topmost, updates, size):
             var.trace_add("write", apply)
         self._hotkey_settings(body)
         buttons = tk.Frame(body, bg=BG)
@@ -3847,6 +3961,9 @@ class App:
             self.cfg["mesos_box"] = list(r.mesos_at)
             self.reader.saved_mesos = tuple(r.mesos_at)
             save_config(self.cfg)
+        if r.supplies is not None:
+            self.session.supply.observe(r.supplies, t.elapsed(), t.running)
+            self.supply_icons.update(r.supply_icons or {})
         if r.mesos is not None:
             had = self.meso.value
             self.meso.observe(r.mesos, now, t.elapsed(), t.running)
@@ -4008,6 +4125,7 @@ class App:
                      **{name: fmt_pct_gained(t.pct_in_last(sec), sec) for sec, name in PCT_WINDOWS},
                      "Current": f"{fmt_num(shown[0])} [{shown[1]:.2f}%]" if shown else "\u2014",
                      "Mesos": mesos},
+            supplies=self._supplies_view(el, m.per_hour(el)),
             state=state, state_text=state_text)
         waiting = self.session.waiting
         self.session.tick(now)
