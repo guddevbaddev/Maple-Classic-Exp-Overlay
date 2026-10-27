@@ -67,7 +67,7 @@ PLATFORM = create_platform()
 PLATFORM.setup_process()
 cv2.setNumThreads(1)
 
-VERSION = "0.9.18-beta"
+VERSION = "0.9.19-beta"
 WINDOW_TITLE = "Maple Classic Exp Overlay"    # the version is shown at the bottom, and in Settings
 OLD_TITLES = ("Maple EXP/hr",)               # what versions before 0.9.3 were called
 
@@ -4183,9 +4183,9 @@ class App:
 
     def _potion_tiles(self):
         """What the HP and MP potion tiles show: for each, the potion of that kind on the quickslot
-        that was used the most this session (or the one seen), how many are left, and how many
-        were used and what they cost."""
-        p, prices = self.potions, self.potion_prices()
+        that was used the most this session (or the one seen), how many are left, how many are
+        used an hour (over the time tracked, once it's been a minute) and how many were used."""
+        p, el = self.potions, self.tracker.elapsed()
         kinds = {c["key"]: c.get("kind", "hp") for c in self.reader.quickslot.catalog}
         shown = {}
         for kind in ("hp", "mp"):
@@ -4196,10 +4196,8 @@ class App:
                 continue
             key = max(keys, key=lambda k: (p.used.get(k, 0), -p.counts[k]))
             used = p.used.get(key, 0)
-            cost = used * prices.get(key, 0)
-            sub = (f"{used} used \u00b7 -{fmt_num(cost) if cost < 10_000 else fmt_short(cost)}" if used and cost
-                   else f"{used} used" if used
-                   else "None used yet")
+            sub = (f"{fmt_num(used / el * 3600)}/hr \u00b7 {used} used" if used and el >= 60
+                   else f"{used} used" if used else "None used yet")
             shown[kind] = dict(icon=self._potion_icon(key), title=self.potion_name(key),
                                value=f"{fmt_num(p.counts[key])} left", sub=sub,
                                low=p.counts[key] <= self.cfg["low_potions"])
@@ -4291,7 +4289,8 @@ class App:
             spark=list(self._trend), pct=shown[1] if shown else None,
             eta=f"Lv {level + 1} in {eta}" if level and eta else f"Lv {level}" if level else "",
             mesos=fmt_num(m.per_hour(el)),
-            tiles={"Last 5 min": fmt_num(rolling), "Mesos / hr": fmt_num(m.per_hour(el)), "Elapsed": fmt_dur(el)},
+            tiles={"Last 5 min": fmt_num(rolling), "Mesos / hr": fmt_num(m.per_hour(el)),
+                   "Profit / hr": fmt_num(self._profit_rate(el)), "Elapsed": fmt_dur(el)},
             details={"% / hr": f"{rate / t.req * 100:.2f}%" if rate and t.req else "\u2014",
                      **{name: fmt_pct_gained(t.pct_in_last(sec), sec) for sec, name in PCT_WINDOWS},
                      "Gained": f"{fmt_short(t.gained)}{f'  (+{t.levels} lvl)' if t.levels else ''}",

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.19-beta
+
+**New**
+- **Profit / hr is a tile now**, next to **Mesos / hr**: what you make an hour once potions are paid for. The four tiles are two by two: Last 5 min and Elapsed, then Mesos / hr and Profit / hr.
+- **Potions an hour:** the HP and MP potion tiles say how many you're using an hour, and how many so far ("36/hr · 27 used"), from the first minute of tracking.
+
 ## 0.9.18-beta
 
 **Fixed**

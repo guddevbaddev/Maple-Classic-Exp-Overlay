@@ -366,13 +366,14 @@ class Tile(tk.Canvas):
         super().__init__(parent, width=g.px(width), height=g.px(62), bg=bg, highlightthickness=0, bd=0)
         self._photo = g.photo(g.panel(g.px(width), g.px(62), 13, "#191c25", "#13151b", 0.09))
         self.create_image(0, 0, anchor="nw", image=self._photo)
-        self.create_text(g.px(13), g.px(12), anchor="nw", text=label.upper(), fill=TEXT_DIM, font=theme.font("semibold", 9))
-        self._v = self.create_text(g.px(13), g.px(29), anchor="nw", text="—", fill=TEXT, font=theme.font("bold", 17))
+        self.pad = 13
+        self.create_text(g.px(self.pad), g.px(12), anchor="nw", text=label.upper(), fill=TEXT_DIM, font=theme.font("semibold", 9))
+        self._v = self.create_text(g.px(self.pad), g.px(29), anchor="nw", text="—", fill=TEXT, font=theme.font("bold", 17))
 
     def set(self, value):
         if self.itemcget(self._v, "text") != value:
-            room = self.t.px(self.bw) - 2 * self.t.px(13)
-            for size in (17, 15, 13, 11):                      # a long number gets a smaller size, not cut off
+            room = self.t.px(self.bw) - 2 * self.t.px(self.pad)
+            for size in (17, 15, 13, 12, 11, 10, 9):           # a long number gets a smaller size, not cut off
                 font = self.t.font("bold", size)
                 if font.measure(value) <= room:
                     break
@@ -554,11 +555,12 @@ class MainView(tk.Frame):
 
         self.tiles_row = tk.Frame(self, bg=bg)
         self.tiles_row.grid(row=2, column=0, padx=g.px(SIDE), pady=pad(0, 6), sticky="we")
-        tw = (INNER - 16) // 3
+        tw = (INNER - 8) // 2
         self.tiles = {}
-        for i, name in enumerate(("Last 5 min", "Mesos / hr", "Elapsed")):
+        # two by two: how fast you're going and for how long, then mesos and what's left of them
+        for i, name in enumerate(("Last 5 min", "Elapsed", "Mesos / hr", "Profit / hr")):
             t = Tile(self.tiles_row, theme, name, tw, bg)
-            t.grid(row=0, column=i, padx=(0 if i == 0 else g.px(8), 0))
+            t.grid(row=i // 2, column=i % 2, padx=(0 if i % 2 == 0 else g.px(8), 0), pady=(0 if i < 2 else g.px(8), 0))
             self.tiles[name] = t
 
         self.potions_row = tk.Frame(self, bg=bg)           # the HP and MP potions on the quickslot
