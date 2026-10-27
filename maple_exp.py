@@ -4184,8 +4184,8 @@ class App:
     def _potion_tiles(self):
         """What the HP and MP potion tiles show: for each, the potion of that kind on the quickslot
         that was used the most this session (or the one seen), how many are left, how many are
-        used an hour (over the time tracked, once it's been a minute) and how many were used."""
-        p, el = self.potions, self.tracker.elapsed()
+        used an hour and what they cost an hour (over the time tracked, once it's been a minute)."""
+        p, el, prices = self.potions, self.tracker.elapsed(), self.potion_prices()
         kinds = {c["key"]: c.get("kind", "hp") for c in self.reader.quickslot.catalog}
         shown = {}
         for kind in ("hp", "mp"):
@@ -4196,8 +4196,13 @@ class App:
                 continue
             key = max(keys, key=lambda k: (p.used.get(k, 0), -p.counts[k]))
             used = p.used.get(key, 0)
-            sub = (f"{fmt_num(used / el * 3600)}/hr \u00b7 {used} used" if used and el >= 60
-                   else f"{used} used" if used else "None used yet")
+            if used and el >= 60:
+                per_hour = used / el * 3600
+                cost = per_hour * prices.get(key, 0)
+                money = fmt_num(cost) if cost < 10_000 else fmt_short(cost)
+                sub = f"{fmt_num(per_hour)}/hr \u00b7 -{money}/hr" if cost else f"{fmt_num(per_hour)}/hr"
+            else:
+                sub = f"{used} used" if used else "None used yet"
             shown[kind] = dict(icon=self._potion_icon(key), title=self.potion_name(key),
                                value=f"{fmt_num(p.counts[key])} left", sub=sub,
                                low=p.counts[key] <= self.cfg["low_potions"])

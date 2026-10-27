@@ -589,8 +589,8 @@ check(f"Profit / hr is also a tile, next to Mesos / hr ({app.view.tiles['Profit 
 check(f"Details shows what potions cost and what the picked-up ones covered ({details})",
       details == {"Potions": "-1,000 / +100", "Profit / hr": "3,100"})
 tiles = {k: {n: t.itemcget(getattr(t, n), "text") for n in ("_title", "_v", "_sub")} for k, t in app.view.potion_tiles.items()}
-check(f"the HP tile shows the potion seen, how many are left, how many an hour and how many were used ({tiles['hp']})",
-      tiles["hp"] == {"_title": "RED POTION", "_v": "62 left", "_sub": "20/hr \u00b7 20 used"})
+check(f"the HP tile shows the potion seen, how many are left, how many an hour and what they cost an hour ({tiles['hp']})",
+      tiles["hp"] == {"_title": "RED POTION", "_v": "62 left", "_sub": "20/hr \u00b7 -1,000/hr"})
 check(f"the MP tile, with no MP potion on the quickslot, says so ({tiles['mp']})",
       tiles["mp"]["_v"] == "\u2014" and tiles["mp"]["_sub"] == "Not on quickslot")
 check("the potion's picture is on its square", app.view.potion_tiles["hp"]._icon_photo is not None
