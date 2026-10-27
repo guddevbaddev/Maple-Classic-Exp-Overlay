@@ -98,6 +98,28 @@ for gh in (10.0, 11.0, 12.0):
     check(f"reads the potions in a real screenshot, with the UI size guessed from {gh} px ({got})",
           got == {"red_potion": 27, "orange_potion": 163, "lemon": 238, "blue_potion": 0})
 
+# ---- a player's quickslot (a crop of a screenshot, keys named 1, 2, S, Pup / 3, 4, End, Pdn): an
+# Orange Potion (269) and a Lemon (266), and items that aren't potions (counts 58, 54 and 140)
+lemon = cv2.imread(str(Path(__file__).parent / "frames" / "quickslot_lemon.png"))
+q = potions.QuickslotReader(ASSETS)
+got = q.read(lemon, 11.0, (404 - 600, 1085 - 870), now=0)
+check(f"reads the Orange Potion and the Lemon on a player's quickslot ({got})",
+      got == {"orange_potion": 269, "lemon": 266})
+seen = [(n, k, why[:16]) for _, n, k, why in q.keys]
+check(f"...and says what every key showed ({seen})",
+      seen[0][:2] == (269, "orange_potion") and seen[3][:2] == (266, "lemon")
+      and seen[1][:2] == (58, None) and seen[1][2].startswith("no potion") and seen[5][:2] == (None, None))
+
+# Where the quickslot is comes from the EXP number, to within a few pixels: the keys are lined up
+# with the quickslot itself, so a few pixels (or more) off still reads every key right.
+for name, shot_, anchor, want_ in (("player's quickslot", lemon, (404 - 600, 1085 - 870), {"orange_potion": 269, "lemon": 266}),
+                                  ("1920x1080 screenshot", shot, (1054, 1044),
+                                   {"red_potion": 27, "orange_potion": 163, "lemon": 238, "blue_potion": 0})):
+    results = {(dx, dy): potions.QuickslotReader(ASSETS).read(shot_, 11.0, (anchor[0] + dx, anchor[1] + dy), now=0)
+               for dx in (-20, -8, 8, 20) for dy in (-8, 8)}
+    off = {k: v for k, v in results.items() if v != want_}
+    check(f"the {name} reads right with the quickslot's place 8-20 px off ({off})", not off)
+
 q = potions.QuickslotReader(ASSETS)
 img = quickslot(layout, 1.35)
 q.read(img, 11.0, (300, 500), now=0)
