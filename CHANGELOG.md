@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.9.16-beta
+
+**New**
+- **Potions** (beta): the overlay reads the count on each quickslot key with a potion on it (it knows them by the game's own pictures). A count going down is potions used, and their price comes off your profit; a count going up is potions picked up, which cover some of it. **Details** shows both (`-1,000 / +100`) and **Profit / hr**: mesos made, less what potions cost. Red, Orange, White and Blue Potions, the Elixirs, and the foods NPC shops sell are known.
+- **A sound when potions run low:** while tracking, each potion you use once it's down to 15 or fewer on your quickslot plays a sound, and the status line says which and how many are left. **Settings > Warn at** changes the number, **Volume** how loud it is (with **Test** to hear it), and **Sound when potions run low** turns it off.
+- **Settings > Potion prices:** what each potion is worth, with its picture. They start at the NPC shop price from meowdb (Classic World's prices); set your own (say, the free market price), or **Shop prices** to put them back. Elixirs start at 0 (not sold in shops).
+
+**Changed**
+- **One session until Reset** (or closing the overlay): changing maps no longer pauses tracking or starts the numbers from zero. EXP, mesos, potions and time add up over the whole session. (The log still has a line for each map.)
+- **It pauses by itself after 2 minutes without EXP** (it was 15 seconds), and when it **can't see the game's EXP bar for 10 seconds** (the game minimized or covered), with that time taken back off the clock. If you had the old default of 15 seconds, it's 2 minutes now: change it in Settings if you liked 15.
+- **Mesos are kept when the inventory is closed** (Details says **saved**), and the next time you open it, everything you made since counts, over the time that went by. Mesos picked up while it's paused by itself (after the last kill) count too; after you press Pause they don't.
+- The EXP table was checked against meowdb's again: every level matches.
+
 ## 0.9.15-beta
 
 **Fixed**

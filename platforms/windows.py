@@ -295,6 +295,14 @@ class WindowsPlatform(Platform):
         except Exception:
             super().alert(title, text)
 
+    def play_sound(self, wav):
+        # (a sound from memory can't play asynchronously, so it plays on a thread of its own)
+        import threading
+        import winsound
+        threading.Thread(target=winsound.PlaySound, args=(wav, winsound.SND_MEMORY | winsound.SND_NODEFAULT),
+                         daemon=True).start()
+        return True
+
     def copy_image(self, path):
         # As a bitmap (what every program pastes, Discord included) and as PNG (sharper, for those
         # that take it). The clipboard owns the memory once it's set; until then it's freed here.

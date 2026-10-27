@@ -573,6 +573,91 @@ check("a bar with the number again isn't %-only", not app.pct_only)
 app.tracker.reset()
 m.simpledialog.askinteger = real_ask
 
+# ---- potions: what they cost, in Details, and their prices in Settings
+app.session.reset()
+app.session.on = True
+app.tracker.elapsed = lambda: 3600.0
+for v in (10000,) * 3 + (14000,) * 3:
+    app._handle(m.Reading(where="MapleStory window 1920x1080", mesos=v))
+for n in (80, 80, 60, 60, 62, 62):
+    app._handle(m.Reading(where="MapleStory window 1920x1080", potions={"red_potion": n}))
+app._update_display()
+root.update()
+details = {name: app.view.details.itemcget(app.view.details._vals[name], "text") for name in ("Potions", "Profit / hr")}
+check(f"Details shows what potions cost and what the picked-up ones covered ({details})",
+      details == {"Potions": "-1,000 / +100", "Profit / hr": "3,100"})
+dialog = app.open_potion_prices()
+root.update()
+entries = [w for w in dialog.winfo_children()[0].winfo_children() if isinstance(w, m.tk.Entry)]
+check(f"Potion prices lists every potion, at the shop's price ({len(entries)})",
+      len(entries) == len(app.reader.quickslot.catalog) and entries[0].get() == "50")
+entries[0].delete(0, "end")
+entries[0].insert(0, "80")
+stack, buttons = [dialog], []
+while stack:
+    w = stack.pop()
+    buttons += [w] if isinstance(w, m.Button) else []
+    stack.extend(w.winfo_children())
+next(b for b in buttons if b.text == "Save").command()
+root.update()
+check("a price changed there is saved and used", app.cfg["potion_prices"] == {"red_potion": 80}
+      and json.loads(m.CONFIG_PATH.read_text())["potion_prices"] == {"red_potion": 80}
+      and app.potion_prices()["red_potion"] == 80)
+app.session.reset()
+
+# ---- the low-potion sound: each potion used once it's down to "Warn at" (15 to start with)
+beeps, real_sound = [], m.PLATFORM.play_sound
+m.PLATFORM.play_sound = lambda wav: (beeps.append(wav), True)[1]
+app.session.on = True
+check("the low-potion sound is on, at 15 left, to start with",
+      app.cfg["low_potion_alert"] is True and app.cfg["low_potions"] == 15)
+
+
+def potion_count(n, times=2):
+    for _ in range(times):
+        app._handle(m.Reading(where="MapleStory window 1920x1080", potions={"red_potion": n}))
+
+
+potion_count(20)
+potion_count(16)
+check("no sound while there are more than 15", beeps == [])
+potion_count(15)
+check(f"a sound when one is used and 15 are left ({app.status.get()})",
+      len(beeps) == 1 and "Red Potion (15 left)" in app.status.get())
+potion_count(14)
+potion_count(12)
+check(f"...and each time one is used after that ({len(beeps)})", len(beeps) == 3)
+potion_count(12, times=4)
+check("not again while none is used", len(beeps) == 3)
+potion_count(40, times=3)
+potion_count(39)
+check("restocked above 15: quiet again", len(beeps) == 3)
+app.cfg["low_potions"] = 40
+potion_count(38)
+check("Warn at can be changed (40: one used at 38 left sounds)", len(beeps) == 4)
+app.cfg["low_potion_alert"] = False
+potion_count(37)
+check("turned off, it stays quiet", len(beeps) == 4)
+app.cfg["low_potion_alert"], app.cfg["low_potions"] = True, 15
+app.session.on = False
+potion_count(10, times=3)
+check("not while tracking is paused (Pause pressed)", len(beeps) == 4)
+app.cfg["alert_volume"] = 0
+app.session.on = True
+potion_count(9)
+check("at volume 0 it's silent", len(beeps) == 4)
+app.cfg["alert_volume"] = 70
+app.play_alert(100)
+loud, quiet = m.alert_sound(100), m.alert_sound(20)
+peak = lambda wav: int(np.abs(np.frombuffer(wav[44:], "<i2")).max())
+check(f"the sound is a real .wav, louder at a higher volume ({peak(quiet)} < {peak(loud)})",
+      beeps[-1] == loud and loud[:4] == b"RIFF" and loud[8:12] == b"WAVE" and 0 < peak(quiet) < peak(loud) <= 32767
+      and peak(m.alert_sound(0)) == 0)
+m.PLATFORM.play_sound = real_sound
+app.session.reset()
+app.low_counts = {}
+del app.tracker.elapsed
+
 check("the typeface is the bundled one, or it fell back cleanly", app._own_fonts in (True, False) and bool(app.theme.fam["extra"]))
 app.close()
 

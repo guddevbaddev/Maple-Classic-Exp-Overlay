@@ -144,6 +144,11 @@ class Platform(ABC):
         except Exception:
             print(f"{title}: {text}")
 
+    def play_sound(self, wav):
+        """Plays a sound (the bytes of a .wav file), without waiting for it to finish. True if
+        it did (where it can't, the overlay rings the window's bell instead)."""
+        return False
+
     def copy_image(self, path):
         """Puts the picture in this PNG file on the clipboard, to paste into Discord or anywhere
         else. True if it worked (where it can't, the overlay shows the file instead)."""

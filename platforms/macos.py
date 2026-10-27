@@ -219,6 +219,15 @@ class MacPlatform(Platform):
         except Exception:
             super().alert(title, text)
 
+    def play_sound(self, wav):
+        # afplay plays files, so the sound is saved first (in the temp folder, once per sound)
+        import hashlib
+        path = Path(tempfile.gettempdir()) / f"maple-exp-{hashlib.sha1(wav).hexdigest()[:12]}.wav"
+        if not path.exists():
+            path.write_bytes(wav)
+        subprocess.Popen(["afplay", str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+
     def copy_image(self, path):
         # AppleScript reads the file as PNG data onto the clipboard. The path goes in as an
         # argument, never into the script's text.
