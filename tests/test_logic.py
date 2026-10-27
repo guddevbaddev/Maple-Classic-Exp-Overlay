@@ -428,8 +428,19 @@ m.CONFIG_PATH.write_text(json.dumps({"gap_seconds": "15", "transparency": 400, "
                                      "log_size": [5], "mode": "region"}), encoding="utf-8")
 cfg = m.load_config()
 check("damaged settings fall back to the defaults",
-      cfg["gap_seconds"] == 15 and cfg["transparency"] == m.MAX_TRANSPARENCY and "pos" not in cfg
+      cfg["gap_seconds"] == 120 and cfg["transparency"] == m.MAX_TRANSPARENCY and "pos" not in cfg
       and "log_size" not in cfg and cfg["mode"] == "window")
+m.CONFIG_PATH.write_text(json.dumps({"gap_seconds": 15}), encoding="utf-8")
+cfg = m.load_config()
+check("the old 15-second pause becomes 2 minutes, once", cfg["gap_seconds"] == 120 and cfg["gap_2min"])
+m.CONFIG_PATH.write_text(json.dumps({**cfg, "gap_seconds": 15}), encoding="utf-8")
+check("...after that, 15 s set in Settings stays 15 s", m.load_config()["gap_seconds"] == 15)
+m.CONFIG_PATH.write_text(json.dumps({"gap_seconds": 45}), encoding="utf-8")
+check("a pause time someone chose is kept", m.load_config()["gap_seconds"] == 45)
+m.CONFIG_PATH.write_text(json.dumps({"potion_prices": {"red_potion": 45, "blue_potion": -5, "x": "a"}}),
+                         encoding="utf-8")
+check("potion prices set in Settings are kept, bad ones left out",
+      m.load_config()["potion_prices"] == {"red_potion": 45})
 m.CONFIG_PATH.write_text("[1, 2", encoding="utf-8")
 check("an unreadable settings file gives the defaults", m.load_config()["topmost"] is True)
 
@@ -720,13 +731,20 @@ def gains(s, seconds, every=3, map_name=None):
         s.tick(clock[0])
 
 
-def idle(s, seconds):
-    end = clock[0] + seconds
+def idle(s, seconds, seen=True):
+    """No EXP; the EXP bar is still read every 1.5 s (unless seen=False: the game can't be seen)."""
+    end, nxt = clock[0] + seconds, clock[0] + 1.5
     while clock[0] < end:
         clock[0] += 0.5
+        if seen and clock[0] >= nxt:
+            nxt += 1.5
+            e = s.exp.exp
+            s.observe([(e, int(e / 95700 * 10000) / 100)], True, clock[0])
         s.tick(clock[0])
 
 
+check("it pauses by itself after 2 minutes without EXP, unless Settings says otherwise",
+      m.DEFAULTS["gap_seconds"] == 120)
 s = session()
 s.start(clock[0])
 gains(s, 30)
@@ -738,15 +756,20 @@ check(f"the next EXP gain carries on (the gain that restarts it isn't counted: {
       s.waiting is None and s.exp.running and s.exp.gained == 1000)
 gained = s.exp.gained
 s.map_seen("The Swamp of Despair I")
-check("leaving the map pauses by itself", s.waiting == "map" and not s.exp.running)
-s.map_seen("Rocky Road II")
+check("leaving the map doesn't pause it", s.waiting is None and s.exp.running)
 gains(s, 6.5)
-check("back on the same map, it carries on adding up", s.exp.running and s.exp.gained == gained + 100)
-s.map_seen("The Swamp of Despair I")
+check(f"EXP on a different map adds up in the same session (gained {s.exp.gained})",
+      s.exp.gained == gained + 200 and s.map == "Rocky Road II")
+gained, el = s.exp.gained, s.exp.elapsed()
+idle(s, 30, seen=False)                                  # alt-tabbed: the game can't be seen
+check(f"not seeing the EXP bar for {m.SCREEN_GAP} s pauses by itself, back to when it was last seen "
+      f"({s.waiting}, {s.exp.elapsed() - el:.1f} s more)",
+      s.waiting == "screen" and not s.exp.running and s.exp.elapsed() - el <= 0.6)
+idle(s, 5)
+check("seeing it again without any EXP stays paused", s.waiting == "screen")
 gains(s, 6.5)
-check(f"EXP on a different map starts from zero, still knowing the level "
-      f"(gained {s.exp.gained}, Lv {m.level_for_req(s.exp.req)})",
-      s.map == "The Swamp of Despair I" and s.exp.gained == 100 and s.exp.req == 95700)
+check(f"...and the next EXP gain carries on, the whole session still adding up (gained {s.exp.gained})",
+      s.waiting is None and s.exp.running and s.exp.gained == gained + 100)
 s.pause()
 gains(s, 6.5)
 check("after pressing Pause, it stays paused", not s.exp.running and s.on is False)
@@ -764,6 +787,38 @@ check(f"with auto-pause off, the timer keeps going without EXP, no rewind ({s.ex
       s.exp.running and s.waiting is None and abs(s.exp.elapsed() - 150) < 0.6)
 gains(s, 3.5)
 check(f"...and the next kill counts as usual (gained {s.exp.gained})", s.exp.gained == 1100)
+
+# mesos and potions: kept through pauses and a closed inventory, counted over the whole session
+s = session()
+s.start(clock[0])
+for v in (5000,) * 3:
+    s.meso.observe(v, clock[0], s.exp.elapsed(), s.on)
+gains(s, 30)
+idle(s, 20)                                              # paused by itself...
+for v in (5300,) * 2:
+    s.meso.observe(v, clock[0], s.exp.elapsed(), s.on)
+check(f"mesos picked up while paused by itself still count (gained {s.meso.gained})",
+      s.waiting == "idle" and s.meso.gained == 300)
+gains(s, 3.5)
+s.map_seen("The Swamp of Despair I")
+gains(s, 30)
+check("the mesos read before are kept on a different map, with the inventory closed",
+      s.meso.value == 5300 and s.meso.gained == 300)
+for v in (5900,) * 2:                                    # the inventory opened again
+    s.meso.observe(v, clock[0], s.exp.elapsed(), s.on)
+check(f"the next mesos read count from the saved ones (gained {s.meso.gained})", s.meso.gained == 900)
+check(f"...over the session's time so far ({s.meso.per_hour(s.exp.elapsed()):.0f}/hr)",
+      abs(s.meso.per_hour(s.exp.elapsed()) - 900 / s.exp.elapsed() * 3600) < 1)
+for counts in ({"red_potion": 80},) * 2 + ({"red_potion": 70},) * 2:
+    s.potions_seen(counts)
+check("potions used during the session are counted", s.potions.used == {"red_potion": 10})
+s.pause()
+for v in (6900,) * 2:
+    s.meso.observe(v, clock[0], s.exp.elapsed(), s.on)
+for counts in ({"red_potion": 60},) * 2:
+    s.potions_seen(counts)
+check("after pressing Pause, mesos and potions aren't counted",
+      s.meso.gained == 900 and s.potions.used == {"red_potion": 10})
 
 # PQ mode: a party quest goes through several maps, with stages that give no EXP until cleared
 s = session()
@@ -784,10 +839,12 @@ idle(s, m.PQ_GAP + 5)
 check(f"it still pauses by itself after {m.PQ_GAP // 60} minutes without EXP", s.waiting == "idle")
 s.set_pq(False)
 gains(s, 3.5)
-check("with PQ mode off again, the map you're on is the one the numbers are for",
-      s.map == "Kerning PQ: Stage 2" and s.exp.running)
-s.map_seen("Kerning City")
-check("...and leaving it pauses, as usual", s.waiting == "map")
+check("with PQ mode off again, it carries on", s.exp.running)
+idle(s, 20)
+check("...and pauses after the usual time without EXP", s.waiting == "idle")
+s.reset()
+check("Reset starts the session from zero", s.exp.gained == 0 and s.exp.elapsed() == 0 and not s.on
+      and s.meso.value is None and not s.potions.seen)
 log, _ = new_log()
 t = 0
 log.gain(t, 100)                                         # PQ mode's log: one line, a long gap allowed

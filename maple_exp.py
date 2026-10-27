@@ -51,6 +51,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageTk
 
 import ocr
 import report
+from potions import SCALE_PER_GH as QS_SCALE_PER_GH, PotionTracker, QuickslotReader
 from platforms import create_platform, hotkey_text, parse_hotkey
 from report import Health, Recent
 from share_card import CardStats, make_card
@@ -66,7 +67,7 @@ PLATFORM = create_platform()
 PLATFORM.setup_process()
 cv2.setNumThreads(1)
 
-VERSION = "0.9.15-beta"
+VERSION = "0.9.16-beta"
 WINDOW_TITLE = "Maple Classic Exp Overlay"    # the version is shown at the bottom, and in Settings
 OLD_TITLES = ("Maple EXP/hr",)               # what versions before 0.9.3 were called
 
@@ -94,6 +95,7 @@ LOG_TEXT_PATH = DATA_DIR / "exp_log.txt"
 LOG_BLOCK = 300             # seconds of non-stop EXP gain behind each log update
 PQ_GAP = 600                # PQ mode: seconds without EXP before it pauses (stages can go a while without)
 PQ_MAP = "Party Quest"      # PQ mode: the log line a whole party quest goes on, whatever its maps
+SCREEN_GAP = 10             # seconds without seeing the EXP bar before it pauses by itself
 MESOS_PATH = DATA_DIR / "mesos_digits.npz"             # learned as you play...
 MESOS_START_PATH = ASSETS / "mesos_digits.npz"          # ...starting from these
 MESOS_BOX_PATH = ASSETS / "mesos_box.npz"
@@ -101,7 +103,7 @@ SCAN_SECONDS = 4            # how often the whole window is checked for the inve
 OUTLINE_SECONDS = 8         # how often the (costly) search for a see-through mesos box may run
 OUTLINE_EAGER = 3           # ...in the first minute after starting or Reset, when the inventory is likely
 EAGER_SECONDS = 60          # opened (about 60-170 ms a search, at 900p-1440p)
-DEFAULTS = {"gap_seconds": 15, "transparency": 0, "topmost": True,
+DEFAULTS = {"gap_seconds": 120, "transparency": 0, "topmost": True,
             "check_updates": True, "skip_version": "", "ui_scale": 100, "compact": False, "hotkeys_on": True,
             "details": False, "level": 0, "auto_pause": True}       # level: for a bar that shows only the % (0: unknown)
 # Settings > Size, in %: only these, so the window can't get too small to read or use.
@@ -225,10 +227,16 @@ def load_config():
         cfg = {}
     if not isinstance(cfg, dict):
         cfg = {}
+    if cfg.get("gap_seconds") == 15 and not cfg.get("gap_2min"):
+        cfg["gap_seconds"] = 120            # 0.9.16: pausing after 2 minutes without EXP (it was 15 s)
+    cfg["gap_2min"] = True
     for key, default in DEFAULTS.items():
         value = cfg.get(key)
         if type(value) is not type(default) or (key == "gap_seconds" and not 1 <= value <= 3600):
             cfg[key] = default
+    prices = cfg.get("potion_prices")
+    cfg["potion_prices"] = {k: v for k, v in prices.items() if isinstance(k, str) and type(v) is int
+                            and 0 <= v <= 10_000_000} if isinstance(prices, dict) else {}
     cfg["transparency"] = min(MAX_TRANSPARENCY, max(0, cfg["transparency"]))
     if cfg["ui_scale"] not in UI_SCALES:
         cfg["ui_scale"] = 100
@@ -1173,9 +1181,10 @@ def find_party_bars(bgr, gh, hsv=None):
 # --------------------------------------------------------------------------- finding it on screen
 
 # pct: the % of a bar that shows only that (high levels); the App turns it into candidates
+# potions: {key: count} read from the quickslot (None: not looked at this time)
 Reading = namedtuple("Reading", "where candidates confident text image boxes map note "
-                                 "mesos mesos_image mesos_boxes party mesos_at pct",
-                     defaults=((), False, "", None, (), None, None, None, None, (), None, None, None))
+                                 "mesos mesos_image mesos_boxes party mesos_at pct potions",
+                     defaults=((), False, "", None, (), None, None, None, None, (), None, None, None, None))
 
 
 def _view(img, lay):
@@ -1197,7 +1206,8 @@ class ScreenReader:
     """Finds the EXP text on screen and reads it, following the game window around.
 
     It also watches the minimap so the map name is read again whenever it changes, reads
-    the inventory's mesos and, every few seconds, counts the members in the party list.
+    the inventory's mesos and, every few seconds, counts the members in the party list and
+    reads the potion counts on the quickslot.
     """
 
     def __init__(self, templates, mode="window", region=None):
@@ -1237,6 +1247,8 @@ class ScreenReader:
         self.map_look = None        # the same for the map name: {"image", "text"}
         self.last_rect = None       # where the game window was at the last look (x, y, w, h)
         self.next_job_read = 0.0
+        self.quickslot = QuickslotReader(ASSETS / "potions")
+        self.next_potions = 0.0
 
     def use_window(self):
         self.mode, self.hwnd, self.box = "window", None, None
@@ -1262,6 +1274,8 @@ class ScreenReader:
         self.two_boxes, self.next_outline = False, 0.0
         self.eager_until = time.monotonic() + EAGER_SECONDS
         self.exp_anchor, self.next_job_read = None, 0.0
+        self.quickslot.forget()
+        self.next_potions = 0.0
         self.request_map()
 
     def read(self, sct):
@@ -1515,8 +1529,32 @@ class ScreenReader:
                 self.mesos_covered = True
             else:
                 mesos, image, boxes = self._read_mesos(sct, wx + bx, wy + by, bw, bh)
+        potions = None
+        if now >= self.next_potions and self.exp_anchor and self.mode == "window":
+            self.next_potions = now + SCAN_SECONDS
+            potions = self._read_potions(sct, rect, notes)
         return reading._replace(mesos=mesos, mesos_image=image, mesos_boxes=boxes, party=party,
-                                mesos_at=moved, note=" ".join(notes) or None)
+                                mesos_at=moved, note=" ".join(notes) or None, potions=potions)
+
+    def _read_potions(self, sct, rect, notes):
+        """{key: count} of the potions on the quickslot, or None if it can't be seen."""
+        q, g = self.quickslot, self.gh
+        if not q.ok:
+            return None
+        wx, wy, ww, wh = rect
+        ax, ay = self.exp_anchor
+        x0, y0, x1, y1 = q.area((ax, ay), g * QS_SCALE_PER_GH)
+        x0, y0, x1, y1 = max(0, x0), max(0, y0), min(ww, x1), min(wh, y1)
+        if x1 - x0 < 4 * g or y1 - y0 < 2 * g:
+            return None
+        if self._covered(wx + x0, wy + y0, x1 - x0, y1 - y0):
+            notes.append("This window is covering the quickslot's potions.")
+            return None
+        shot = grab(sct, wx + x0, wy + y0, x1 - x0, y1 - y0)
+        if not shot:
+            return None
+        img, sx, sy = shot                                # (clipped to the screens)
+        return q.read(img, g, (wx + ax - sx, wy + ay - sy))
 
     def _readable(self, img, field):
         """Clear mesos digits at field? (Always yes while the mesos font is still being
@@ -1695,14 +1733,6 @@ class ExpTracker:
             end = time.monotonic() if at is None else min(time.monotonic(), at)
             self._accum += max(0.0, end - self._resumed)
             self.running = False
-
-    def new_session(self):
-        """Numbers from zero again, keeping what's known about the level and current EXP."""
-        self.running = False
-        self._accum, self._resumed = 0.0, None
-        self.gained, self.levels, self.deaths = 0, 0, 0
-        self.samples = deque()
-        self.pct_gained, self.pct_samples = 0.0, deque()
 
     def elapsed(self):
         if self.running:
@@ -2056,29 +2086,36 @@ class MesoTracker:
 
 
 class Session:
-    """What's on screen: EXP and mesos since Start, and when tracking pauses by itself.
+    """What's on screen: EXP, mesos and potions since Start, until Reset (or the overlay closes).
 
-    After Start it tracks until Pause is pressed, except that it pauses by itself when no
-    EXP comes in for `gap` seconds or you leave the map, and carries on at the next EXP
-    gain: from zero if that's on a different map, so the numbers are always for the map
-    you're on. Time spent paused never counts, and an idle pause rewinds the clock to the
-    last EXP gain. The gain that ends a pause starts the clock again rather than counting,
-    just like a log stretch's first gain.
+    After Start it tracks until Pause is pressed. It pauses by itself when no EXP comes in for
+    `gap` seconds (2 minutes unless Settings says otherwise), or when it can't see the game's
+    EXP bar for SCREEN_GAP seconds (the game is minimized, covered or closed), and carries on
+    at the next EXP gain. Changing maps doesn't pause it or start from zero: everything adds up
+    over the whole session. Time spent paused never counts: an idle pause rewinds the clock to
+    the last EXP gain, a pause for not seeing the game to the last time it was seen. The gain
+    that ends a pause starts the clock again rather than counting, just like a log stretch's
+    first gain.
 
-    In PQ mode (a party quest goes through several maps) changing maps doesn't pause or start
-    from zero, and it only pauses by itself after PQ_GAP seconds without EXP: a stage can take
-    a while, and its EXP comes all at once when it's cleared.
+    Mesos and potions are counted while Start is on, paused by itself or not (mesos picked up
+    after the last kill are still yours), but not after Pause is pressed. The last mesos and
+    potion counts are kept while the inventory is closed or the quickslot can't be seen: the
+    next one read counts from there.
+
+    In PQ mode (a party quest goes through several maps), it only pauses by itself after PQ_GAP
+    seconds without EXP: a stage can take a while, and its EXP comes all at once when cleared.
     """
 
     def __init__(self, gap):
-        self.exp, self.meso = ExpTracker(), MesoTracker()
+        self.exp, self.meso, self.potions = ExpTracker(), MesoTracker(), PotionTracker()
         self.gap = gap
         self.on = False             # Start was pressed (and Pause wasn't)
-        self.waiting = None         # paused by itself: "idle" or "map"
-        self.map = None             # the map these numbers are for
+        self.waiting = None         # paused by itself: "idle" or "screen"
+        self.map = None             # the map this session started on
         self.here = None            # the map you're on now
         self.last_gain = None
-        self.pq = False             # PQ mode: maps don't matter, and idle means PQ_GAP
+        self.seen_at = None         # when the EXP bar was last read
+        self.pq = False             # PQ mode: idle means PQ_GAP
         self.auto_pause = True      # pause by itself after idle_gap without EXP (Settings)
 
     @property
@@ -2088,11 +2125,9 @@ class Session:
 
     def set_pq(self, on):
         self.pq = on
-        if not on:
-            self.map = self.here    # these numbers are for the map you're on from now
 
     def start(self, now):
-        self.on, self.waiting, self.last_gain = True, None, now
+        self.on, self.waiting, self.last_gain, self.seen_at = True, None, now, now
         self.map = self.map or self.here
         self.exp.start()
 
@@ -2104,16 +2139,17 @@ class Session:
     def reset(self):
         self.exp.reset()
         self.meso.reset()
-        self.on, self.waiting, self.map, self.last_gain = False, None, None, None
+        self.potions.reset()
+        self.on, self.waiting, self.map, self.last_gain, self.seen_at = False, None, None, None, None
 
-    def _wait(self, why):
-        self.exp.pause(at=self.last_gain)
-        self.meso.pause()
+    def _wait(self, why, since):
+        self.exp.pause(at=since)
         self.waiting = why
 
     def observe(self, candidates, confident, now):
         """Feeds an EXP reading to the tracker. Returns the tracker's (accepted, note)."""
         t = self.exp
+        self.seen_at = now
         exp_before, gained_before = t.exp, t.gained
         result = t.observe(candidates, confident)
         rose = exp_before is not None and t.exp is not None and (
@@ -2121,10 +2157,6 @@ class Session:
         if t.running and t.gained > gained_before:
             self.last_gain = now
         elif self.on and self.waiting and rose:
-            if self.map and self.here and self.here != self.map and not self.pq:
-                t.new_session()             # a different map: its own numbers
-                self.meso.reset()
-                self.map = self.here
             self.waiting = None
             self.last_gain = now
             t.start()
@@ -2133,20 +2165,21 @@ class Session:
     def map_seen(self, name):
         """The map name was read (already matched to known names, see AutoLog.canonical)."""
         self.here = name
-        if not self.on:
-            return
-        if self.map is None:
+        if self.on and self.map is None:
             self.map = name
-        elif name != self.map and not self.pq:   # left the map
-            if self.exp.running:
-                self._wait("map")
-            elif self.waiting:
-                self.waiting = "map"
+
+    def potions_seen(self, counts):
+        """Potion counts read from the quickslot ({key: count})."""
+        self.potions.observe(counts, self.on)
 
     def tick(self, now):
-        """Call regularly: pauses after `gap` seconds without EXP."""
-        if self.auto_pause and self.on and self.exp.running and now - self.last_gain > self.idle_gap:
-            self._wait("idle")
+        """Call regularly: pauses after `gap` seconds without EXP, or SCREEN_GAP without the EXP bar."""
+        if not (self.on and self.exp.running):
+            return
+        if self.seen_at is not None and now - self.seen_at > SCREEN_GAP:
+            self._wait("screen", min(self.seen_at, now))
+        elif self.auto_pause and now - self.last_gain > self.idle_gap:
+            self._wait("idle", self.last_gain)
 
 
 # --------------------------------------------------------------------------- auto log
@@ -2781,7 +2814,7 @@ class App:
             self.reader.saved_mesos = tuple(saved)
         self.session = Session(self.cfg["gap_seconds"])
         self.session.auto_pause = self.cfg["auto_pause"]
-        self.tracker, self.meso = self.session.exp, self.session.meso
+        self.tracker, self.meso, self.potions = self.session.exp, self.session.meso, self.session.potions
         self.party = 1
         self._party_seen = (None, 0)
         self.last_mesos = None
@@ -2931,15 +2964,15 @@ class App:
         return pct_candidates(pct, level)
 
     def toggle_pq(self):
-        """PQ mode: for party quests, which go through several maps. The numbers carry on from
-        map to map, it waits longer without EXP before pausing, and the log puts the whole
-        quest on one line (PQ_MAP). Off each time the overlay starts."""
+        """PQ mode: for party quests, which go through several maps. It waits longer without EXP
+        before pausing, and the log puts the whole quest on one line (PQ_MAP). Off each time the
+        overlay starts."""
         self.pq_mode = not self.pq_mode
         self.session.set_pq(self.pq_mode)
         self.autolog.reset_clock()          # a log stretch is all PQ or all one map
-        self.status.set(f"PQ mode on: changing maps doesn't reset the numbers, it pauses by itself only after "
-                        f"{PQ_GAP // 60} minutes without EXP, and the log calls it \"{PQ_MAP}\"."
-                        if self.pq_mode else "PQ mode off: each map has its own numbers again.")
+        self.status.set(f"PQ mode on: it pauses by itself only after {PQ_GAP // 60} minutes without EXP, "
+                        f"and the log calls it \"{PQ_MAP}\"." if self.pq_mode else
+                        f"PQ mode off: it pauses after {self.session.gap} seconds without EXP again.")
 
     def _log_map(self):
         """The map the log is for: the one you're on, or PQ_MAP in PQ mode."""
@@ -3423,6 +3456,13 @@ class App:
                command=lambda: gap_by(5), bg=BG).pack(side="left")
         tk.Label(gap_step, text="s", bg=BG, fg=DIM, font=th.font("regular", 11)).pack(side="left", padx=(px(6), 0))
         tk.Label(body, text="Pausing also restarts the 5-minute log timer.", **dim).pack(anchor="w", pady=(px(5), 0))
+        line = tk.Frame(body, bg=BG)
+        line.pack(fill="x", pady=(px(12), 0))
+        tk.Label(line, text="Potion prices", **text).pack(side="left")
+        Button(line, th, text="Change...", kind="secondary", width=104, height=34, radius=10, size=12,
+               command=lambda: self.open_potion_prices(w), bg=BG).pack(side="right")
+        tk.Label(body, text="What the potions on your quickslot cost: used ones come off your profit, "
+                 "picked-up ones cover some of it.", wraplength=wrap, justify="left", **dim).pack(anchor="w", pady=(px(5), 0))
 
         self._section(body, "Window")
         transparency = tk.IntVar(value=int(self.cfg["transparency"]))
@@ -3508,6 +3548,67 @@ class App:
                  bg=BG, fg=FAINT, font=th.font("regular", 10)).pack(anchor="w", pady=(px(8), 0))
         tk.Label(body, text=f"{WINDOW_TITLE} v{VERSION}. This is a beta: it's still being improved.", bg=BG, fg=FAINT,
                  font=th.font("regular", 10)).pack(anchor="w", pady=(px(2), 0))
+
+    def open_potion_prices(self, parent=None):
+        """Settings > Potion prices: the mesos each potion is worth (the NPC shop's price to start
+        with). 0 leaves a potion out of the profit."""
+        th = self.theme
+        px = th.px
+        w = tk.Toplevel(parent or self.root)
+        w.title("Potion prices")
+        w.configure(bg=BG)
+        w.resizable(False, False)
+        w.transient(parent or self.root)
+        w.attributes("-topmost", bool(self.cfg["topmost"]))
+        body = tk.Frame(w, bg=BG)
+        body.pack(padx=px(22), pady=px(18))
+        tk.Label(body, text="Mesos per potion. These start at the NPC shop's price (meowdb); set the free "
+                 "market price if that's what yours are worth to you. 0 leaves one out.", wraplength=px(340),
+                 justify="left", bg=BG, fg=DIM, font=th.font("regular", 11)).grid(row=0, column=0, columnspan=4,
+                                                                                    sticky="w", pady=(0, px(10)))
+        prices, shop = self.potion_prices(), {p["key"]: p["price"] for p in self.reader.quickslot.catalog}
+        fields, w.icons = {}, []
+        for i, p in enumerate(self.reader.quickslot.catalog):
+            row, col = 1 + i // 2, (i % 2) * 2
+            try:                                     # the potion's picture, as the game shows it
+                icon = Image.open(ASSETS / "potions" / f"{p['key']}.png").convert("RGBA")
+                size = px(24)
+                icon.thumbnail((size, size), Image.LANCZOS)
+                w.icons.append(ImageTk.PhotoImage(icon))
+                image = dict(image=w.icons[-1], compound="left")
+            except Exception:
+                image = {}
+            tk.Label(body, text=" " + p["name"], bg=BG, fg=FG, font=th.font("regular", 11), anchor="w", **image).grid(
+                row=row, column=col, sticky="w", padx=(0 if col == 0 else px(16), px(6)), pady=px(2))
+            var = tk.StringVar(value=str(prices[p["key"]]))
+            tk.Entry(body, textvariable=var, width=8, bg=FIELD, fg=FG, insertbackground=FG, relief="flat",
+                     highlightthickness=0, font=th.font("regular", 11), justify="right").grid(
+                row=row, column=col + 1, pady=px(2), ipady=px(2))
+            fields[p["key"]] = var
+
+        def save():
+            own = {}
+            for key, var in fields.items():
+                try:
+                    v = int(var.get().replace(",", "").strip())
+                except ValueError:
+                    continue
+                if 0 <= v <= 10_000_000 and v != shop[key]:
+                    own[key] = v
+            self.cfg["potion_prices"] = own
+            save_config(self.cfg)
+            w.destroy()
+
+        def shop_prices():
+            for key, var in fields.items():
+                var.set(str(shop[key]))
+        buttons = tk.Frame(body, bg=BG)
+        buttons.grid(row=99, column=0, columnspan=4, sticky="we", pady=(px(14), 0))
+        Button(buttons, th, text="Save", kind="primary", width=96, height=36, radius=11, size=12,
+               command=save, bg=BG).pack(side="right")
+        Button(buttons, th, text="Shop prices", kind="secondary", width=116, height=36, radius=11, size=12,
+               command=shop_prices, bg=BG).pack(side="left")
+        return w
 
     def _reopen_settings(self):
         """After a size change: Settings again, in the same place, drawn for the new size."""
@@ -3849,9 +3950,15 @@ class App:
             save_config(self.cfg)
         if r.mesos is not None:
             had = self.meso.value
-            self.meso.observe(r.mesos, now, t.elapsed(), t.running)
+            self.meso.observe(r.mesos, now, t.elapsed(), self.session.on)   # (paused by itself too)
             if had is None and self.meso.value is not None:
                 log_activity(f"Mesos read: {fmt_num(self.meso.value)}")
+        if r.potions is not None:
+            had = self.potions.seen
+            self.session.potions_seen(r.potions)
+            if not had and self.potions.seen:
+                log_activity("Potions read on the quickslot: " + ", ".join(
+                    f"{self.potion_name(k)} {n}" for k, n in sorted(self.potions.counts.items())))
         if r.party is not None:                         # believe a new party size once seen twice
             seen, n = self._party_seen
             n = n + 1 if r.party == seen else 1
@@ -3863,10 +3970,12 @@ class App:
         if r.map:
             self.map_read = r.map                       # as read (kept on record if renamed)
             # A slightly misread name of the map you're on still counts as that map.
+            before = self.map_name
             self.map_name = self.autolog.canonical(r.map, also=(self.map_name, self.session.map))
-            waiting = self.session.waiting
             self.session.map_seen(self.map_name)
-            self._after_pause_check(waiting)
+            if self.skip_log and before and self.map_name != before and not self.pq_mode:
+                self.skip_log = False                   # "Don't log" was for that map's run
+                self._show_skip_log()
         self.note = r.note
         cands = r.candidates
         if r.pct is not None:
@@ -3926,17 +4035,41 @@ class App:
             return "Found your EXP bar. Your level shows after your next EXP gain."
         s = self.session
         if s.waiting == "idle":
-            gap = f"{s.idle_gap // 60} minutes" if s.pq else f"{s.idle_gap} seconds"
+            g = s.idle_gap
+            gap = f"{g // 60} minute{'s' if g >= 120 else ''}" if g % 60 == 0 else f"{g} seconds"
             return (f"Paused: no EXP for {gap}, so this time doesn't count. "
                     "It carries on at your next EXP gain.")
-        if s.waiting == "map":
-            return ("Paused: you left the map. It carries on at your next EXP gain "
-                    "(from zero if that's on a different map).")
+        if s.waiting == "screen":
+            return ("Paused: it can't see the game's EXP bar, so this time doesn't count. "
+                    "It carries on at your next EXP gain.")
         if t.running:
             return "Tracking your EXP. Not logging this run." if self.skip_log else "Tracking your EXP."
         if t.elapsed() > 0:
             return "Paused. Press Resume to carry on."
         return "Ready. Press Start when you begin farming."
+
+    def potion_prices(self):
+        """{key: mesos} for each potion: the price set in Settings, or the NPC shop's."""
+        own = self.cfg.get("potion_prices") or {}
+        return {p["key"]: own.get(p["key"], p["price"]) for p in self.reader.quickslot.catalog}
+
+    def potion_name(self, key):
+        return next((p["name"] for p in self.reader.quickslot.catalog if p["key"] == key), key)
+
+    def _potions_text(self):
+        """Potions used and picked up this session, in mesos: "-1,250 / +300"."""
+        p = self.potions
+        if not p.seen:
+            return "\u2014"
+        prices = self.potion_prices()
+        return f"-{fmt_num(p.cost(prices))} / +{fmt_num(p.covered(prices))}"
+
+    def _profit_rate(self, el):
+        """Mesos per hour, less what potions cost (the ones picked up cover some of it)."""
+        m, p = self.meso, self.potions
+        if el < 30 or (m.value is None and not p.seen):
+            return None
+        return (m.gained - p.net(self.potion_prices())) / el * 3600
 
     def _log_tick(self, now):
         if not self.tracker.running or self.skip_log:
@@ -3995,7 +4128,10 @@ class App:
             mesos = ("move this window" if self.reader.mesos_covered
                      else "reading..." if self.reader.mesos_box else "open inventory")
         else:
-            mesos = fmt_num(m.value) + (f"  (+{fmt_short(m.gained)})" if m.gained > 0 else "")
+            mesos = fmt_num(m.value) + (f"  ({'+' if m.gained >= 0 else '-'}{fmt_short(abs(m.gained))})"
+                                        if m.gained else "")
+            if m.seen_at is not None and now - m.seen_at > 30:   # the inventory is closed: the last count, kept
+                mesos += "  saved"
         state, state_text = self._state()
         self.view.show(
             rate=fmt_num(rate) if rate is not None else None,
@@ -4008,7 +4144,8 @@ class App:
                      **{name: fmt_pct_gained(t.pct_in_last(sec), sec) for sec, name in PCT_WINDOWS},
                      "Gained": f"{fmt_short(t.gained)}{f'  (+{t.levels} lvl)' if t.levels else ''}",
                      "Current": f"{fmt_num(shown[0])} [{shown[1]:.2f}%]" if shown else "\u2014",
-                     "Mesos": mesos, "Mesos / 5 min": fmt_num(m.per_5min(el))},
+                     "Mesos": mesos, "Mesos / 5 min": fmt_num(m.per_5min(el)),
+                     "Potions": self._potions_text(), "Profit / hr": fmt_num(self._profit_rate(el))},
             state=state, state_text=state_text)
         waiting = self.session.waiting
         self.session.tick(now)
@@ -4387,6 +4524,9 @@ class App:
             "party": party_label(self.party),
             "mesos": fmt_num(self.meso.value) if self.meso.value is not None else None, "tracking": bool(self.session.on),
             "tracker": f"paused: {self.session.waiting or 'no'}, gained {fmt_num(t.gained)} EXP in {fmt_dur(t.elapsed())}",
+            "potions": {"counts": self.potions.counts, "used": self.potions.used, "picked up": self.potions.picked,
+                        "found": [(k, n) for k, _, n in self.reader.quickslot.found],
+                        "digit scale": self.reader.quickslot.digit_scale},
             "settings": {"mode": self.reader.mode, **{k: self.cfg.get(k) for k in ("gap_seconds", "transparency", "topmost", "ui_scale",
                                                       "compact", "hotkeys_on", "check_updates")}},
             "timeline": [self._private(x) for x in self.recent.lines()], "errors": errors, "crashes": crashes,

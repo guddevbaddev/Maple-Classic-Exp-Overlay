@@ -86,6 +86,7 @@ jobs:
         run: |
           python tests/test_logic.py
           python tests/test_screen.py
+          python tests/test_potions.py
           python tests/test_ocr.py
           python tests/test_report.py
           python tests/test_update.py
@@ -227,6 +228,7 @@ jobs:
         run: |
           python tests/test_logic.py
           python tests/test_screen.py
+          python tests/test_potions.py
           python tests/test_ocr.py
           python tests/test_report.py
           python tests/test_update.py

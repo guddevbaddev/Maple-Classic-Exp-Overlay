@@ -18,6 +18,7 @@ This copy doesn't connect to the original author's best-maps website: it never s
 - **How long until your next level**, right under your EXP/hr (for example "Lv 31 in 36 min")
 - **How much of a level you gained** in the last 5, 15 and 30 minutes and the last hour (under **Details**). Paused time doesn't count. Until you've tracked that long, it shows what you've gained so far ("2.40% so far").
 - **Mesos per hour**, read from your inventory
+- **What your potions cost** (beta), read from your quickslot: potions used come off your profit, potions picked up cover some of it, and **Profit / hr** shows what's left
 - **A log of every map you farm**: your EXP/hr and mesos/hr there, at which level and class, solo or in a party
 
 You don't type anything in. It reads all of this from your game screen by itself.
@@ -59,7 +60,7 @@ You need a Mac with Apple Silicon (M1 or newer) and macOS 14 (Sonoma) or newer, 
 #### If something's wrong on a Mac
 
 - **It closes right away, or Terminal says "killed":** do step 3 again.
-- **The timer starts, then pauses ("no EXP for 15 seconds") even while you're killing monsters, or Details > Current never changes:** it can't see the game. Do step 5 again: remove it from Screen Recording with **–**, add it back with **+**, then Cmd+Q and open it again. Switching it off and on isn't always enough.
+- **The timer starts, then pauses ("it can't see the game's EXP bar") even while you're killing monsters, or Details > Current never changes:** it can't see the game. Do step 5 again: remove it from Screen Recording with **–**, add it back with **+**, then Cmd+Q and open it again. Switching it off and on isn't always enough.
 - **After an update:** **Update now** does step 3 by itself, but macOS may want step 5 again for the new version.
 - **Still not working:** ⚙ > **Save logs**, and attach the zip to a [bug report](../../issues).
 
@@ -72,19 +73,21 @@ You need a Mac with Apple Silicon (M1 or newer) and macOS 14 (Sonoma) or newer, 
    - the EXP bar (bottom)
    - the mesos at the bottom of your inventory
    - the party list
+   - the quickslot (the 8 keys above the right end of the status bar), for potions
 
    The overlay reads them from your screen, so it can't see through itself. If it's in the way, it tells you at the bottom of its window. It remembers where you put it.
 4. **Press Start** and play normally. You only need to press it once:
-   - It **pauses by itself** when you get no EXP for 15 seconds or leave the map, and carries on at your next EXP gain. Paused time doesn't count, so EXP/hr only covers your farming. The time without EXP before it paused is taken back off the clock too, so the timer jumps back a little. Don't want that (say, you're timing how long it takes to gather items)? Turn off **Pause the timer when no EXP comes in** in ⚙ Settings: the timer then keeps running until you press Pause.
-   - On a different map, the numbers start from zero for that map.
-5. **Want mesos tracked?** Keep your inventory open, on any tab.
+   - It **pauses by itself** when you get no EXP for 2 minutes, and when it can't see the game's EXP bar for 10 seconds (the game is minimized, or something covers it). It carries on at your next EXP gain. Paused time doesn't count, so EXP/hr only covers your farming. The time without EXP before it paused is taken back off the clock too, so the timer jumps back a little. Don't want that (say, you're timing how long it takes to gather items)? Turn off **Pause the timer when no EXP comes in** in ⚙ Settings: the timer then keeps running until you press Pause (it still pauses when it can't see the game).
+   - **One session, until you press Reset** (or close the overlay): changing maps doesn't pause it or start from zero. EXP, mesos, potions and time all add up over the whole session.
+5. **Want mesos tracked?** Open your inventory, on any tab, now and then. It saves the mesos it read: close the inventory and they stay (Details says **saved**), and the next time you open it, everything you made since counts, over the time that went by.
+6. **Want potions counted?** Put them on your quickslot keys, as you normally would. See [Potions](#potions) below.
 
 Within a few seconds it shows your level and how much EXP you have. The per-hour numbers fill in once you've gained a little EXP.
 
 | Button | What it does |
 |---|---|
 | **Start / Pause / Resume** | Starts tracking. **Pause** stops it until you press **Resume**. |
-| **Reset** | Starts a new session from zero, and looks for the minimap, inventory and party list again (handy after moving them around) |
+| **Reset** | Starts a new session from zero (EXP, mesos, potions and time), and looks for the minimap, inventory and party list again (handy after moving them around) |
 | **Don't log** | Keeps the current run out of the log, for example while you're testing a map or waiting for your party. Everything is still shown on screen. It turns itself off when you leave the map or stop getting EXP, so your next run is logged as usual. |
 | **Select area** | Lets you drag a box around the EXP numbers, if it ever can't find them. The button then turns into **Follow game**, which goes back to finding them by itself. |
 | **View capture** | Shows exactly what it read from your screen |
@@ -96,14 +99,25 @@ Within a few seconds it shows your level and how much EXP you have. The per-hour
 
 ### PQ mode
 
-A party quest goes through several maps, and a stage can go minutes without EXP until it's cleared. Normally the overlay pauses when you change maps (and starts that map's numbers from zero), and after 15 seconds without EXP. Both would spoil a PQ, so turn on **PQ mode** in the **...** menu (it then says **PQ mode: on**) before you start:
+A party quest goes through several maps, and a stage can go minutes without EXP until it's cleared. Normally the overlay pauses after 2 minutes without EXP, which could spoil a PQ, so turn on **PQ mode** in the **...** menu (it then says **PQ mode: on**) before you start:
 
-- **Changing maps doesn't reset anything.** EXP/hr, mesos/hr and the time carry on through the whole quest.
 - **It only pauses by itself after 10 minutes without EXP**, so the EXP you get when a stage is cleared counts.
 - **The log puts the PQ on one line called "Party Quest"**, whatever maps it went through. Right-click it and choose **Rename map** to call it, say, "Kerning PQ".
 - The status at the top says **PQ** while it's tracking.
 
 It turns itself off when you close the overlay, so your normal farming isn't affected if you forget. To turn it off sooner, choose **PQ mode: on** in the menu again.
+
+### Potions
+
+The overlay reads the **count on each quickslot key** that has a potion on it (like the 163 under an Orange Potion), every few seconds. It knows the potions by their pictures (the game's own) and uses their **NPC shop price** from [meowdb](https://meowdb.com/msclassic/npc-shops/item-efficiency/consumables):
+
+- **A count that goes down** is potions used: their price comes off your profit.
+- **A count that goes up** is potions picked up (or bought): their price covers some of that cost.
+- **Details** shows both, like `-1,000 / +100` (mesos), and **Profit / hr**: mesos made, less what potions cost, per hour.
+- A count has to be read the same twice in a row before it counts (three times for a big change), so a misread doesn't show up as potions used. A change of more than 100 at once (a trip to storage, or moving potions to another key) starts counting afresh.
+- **Changing prices:** ⚙ > **Potion prices** > **Change...**: set what a potion is worth to you, for example its free market price. **Shop prices** puts them all back. Elixirs aren't sold in NPC shops, so they start at 0 (left out) until you set a price.
+
+It knows the Red, Orange, White and Blue Potions, the Elixirs, and the foods NPC shops sell (Apple, Meat, Lemon, Hamburger, Pure Water and the rest: the list is in ⚙ > Potion prices). A potion only on the inventory's Use tab, not on a quickslot key, isn't counted. **This is new:** if it gets a count wrong, please send a screenshot (PNG) of the game with your quickslot in a [bug report](../../issues).
 
 ### High levels: an EXP bar with only a %
 
@@ -149,7 +163,7 @@ Click **>** at the top right of the overlay to open the log. It's the table on t
 - **Class** is read from the status bar (never your character's name). Different classes get separate lines.
 - **15-minute runs:** under the log it also counts toward 15 minutes of non-stop farming on one map with the same party size ("15-min run: 7 of 15 min"). A level-up doesn't stop it; a break, a new map or a new party size starts it over. Finished runs are saved separately in your log file.
 - **Greyed-out lines** were changed outside the overlay. Every line the overlay writes is sealed, so a line edited or added by hand is easy to spot. Deleting a line, or renaming a map in the overlay, is fine.
-- **Taking a break restarts the 5-minute timer.** A break means no EXP for 15 seconds (you can change this in ⚙). Changing maps or party size restarts it too.
+- **Taking a break restarts the 5-minute timer.** A break means no EXP for 2 minutes (you can change this in ⚙). Changing maps or party size restarts it too.
 - **Don't want a run logged?** Press **Don't log**. It switches back on its own when that run ends.
 - **Solo** means just you. **4ppl** means a party of 4.
 - **?** under Mesos/hr means your inventory wasn't open.
@@ -163,8 +177,9 @@ Click **>** at the top right of the overlay to open the log. It's the table on t
 
 ## Settings (⚙)
 
-- **Pause the timer when no EXP comes in** (on by default). Off: the timer keeps running through breaks, without ever jumping back, until you press Pause. Leaving the map still pauses it.
-- **Pause tracking after no EXP for...** How long you can go without EXP before it pauses by itself. This also restarts the log's 5-minute timer. The default is 15 seconds.
+- **Pause the timer when no EXP comes in** (on by default). Off: the timer keeps running through breaks, without ever jumping back, until you press Pause. Not seeing the game still pauses it.
+- **Pause tracking after no EXP for...** How long you can go without EXP before it pauses by itself. This also restarts the log's 5-minute timer. The default is 2 minutes (120 s). (If you had the old default of 15 seconds, it's 2 minutes now; change it back here if you liked it.)
+- **Potion prices.** What each potion is worth, for **Profit / hr**. See [Potions](#potions).
 - **Window transparency.** Makes the overlay see-through, up to 40%. (More and it could fade out of sight, with Settings in it.)
 - **Size.** Makes the text and the whole window smaller or bigger, from 60% to 200%. The smallest text stops at a readable size, so it never gets too small to read. It's sized for each screen, so a window moved to a screen with different Windows scaling (like a 5K and a 1440p screen) looks the same size on both.
 - **Hotkeys.** Turn them on or off, and change them. See [Hotkeys](#hotkeys).
@@ -303,6 +318,7 @@ py -3 build.py
 ```
 py -3 tests/test_logic.py
 py -3 tests/test_screen.py
+py -3 tests/test_potions.py
 py -3 tests/test_ui.py     # opens the real window for a few seconds (the notes box)
 ```
 
@@ -318,6 +334,7 @@ GitHub runs the logic tests on every push ([Tests workflow](.github/workflows/te
 - A reading only counts if the EXP and % agree with how much EXP that level needs, so misreads are ignored.
 - Mesos are read the same way. The mesos box is found by its outline, which also works while the inventory is see-through.
 - The party size is the number of HP bars in the party list.
+- Potions (`potions.py`): the quickslot is always the same distance from the EXP number, at the UI's scale, so only its 8 keys are looked at. A key's count is read with the game's own item-count digits, from the key's left edge; the potion is told by the colour of its body (the key's name covers the top of the picture). Pictures, digits and prices are in `assets/potions/`.
 - Map names are read with Tesseract.
 - Settings, the log and `errors.log` are saved in `%APPDATA%\MapleEXP` (`~/Library/Application Support/MapleEXP` on macOS; from its old name, Maple EXP/hr, so updates keep them).
 
@@ -326,6 +343,7 @@ GitHub runs the logic tests on every push ([Tests workflow](.github/workflows/te
 ## Credits
 
 - The Classic World EXP table is from [meowdb](https://meowdb.com/msclassic/guides/exp-table-level-1-to-100). It's used to work out your level.
+- Potion prices (NPC shops) are from [meowdb](https://meowdb.com/msclassic/npc-shops/item-efficiency/consumables). The potion pictures and the item-count digits are the game's own, from [maplestory.io](https://maplestory.io).
 - Map names are read with [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) (Apache 2.0 license), which is included in the download.
 
 ## License

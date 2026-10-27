@@ -503,7 +503,8 @@ class MainView(tk.Frame):
         self.more_btn.grid(row=3, column=0, padx=g.px(SIDE), pady=pad(0, 4))
         self.details_open = details
         self.details = Details(self, theme, ("% / hr", "% last 5 min", "% last 15 min", "% last 30 min",
-                                             "% last hour", "Gained", "Current", "Mesos", "Mesos / 5 min"), bg)
+                                             "% last hour", "Gained", "Current", "Mesos", "Mesos / 5 min",
+                                             "Potions", "Profit / hr"), bg)
         self.details.grid(row=4, column=0, padx=g.px(SIDE), pady=pad(0, 8))
         if not details:
             self.details.grid_remove()

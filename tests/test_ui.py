@@ -573,6 +573,39 @@ check("a bar with the number again isn't %-only", not app.pct_only)
 app.tracker.reset()
 m.simpledialog.askinteger = real_ask
 
+# ---- potions: what they cost, in Details, and their prices in Settings
+app.session.reset()
+app.session.on = True
+app.tracker.elapsed = lambda: 3600.0
+for v in (10000,) * 3 + (14000,) * 3:
+    app._handle(m.Reading(where="MapleStory window 1920x1080", mesos=v))
+for n in (80, 80, 60, 60, 62, 62):
+    app._handle(m.Reading(where="MapleStory window 1920x1080", potions={"red_potion": n}))
+app._update_display()
+root.update()
+details = {name: app.view.details.itemcget(app.view.details._vals[name], "text") for name in ("Potions", "Profit / hr")}
+check(f"Details shows what potions cost and what the picked-up ones covered ({details})",
+      details == {"Potions": "-1,000 / +100", "Profit / hr": "3,100"})
+dialog = app.open_potion_prices()
+root.update()
+entries = [w for w in dialog.winfo_children()[0].winfo_children() if isinstance(w, m.tk.Entry)]
+check(f"Potion prices lists every potion, at the shop's price ({len(entries)})",
+      len(entries) == len(app.reader.quickslot.catalog) and entries[0].get() == "50")
+entries[0].delete(0, "end")
+entries[0].insert(0, "80")
+stack, buttons = [dialog], []
+while stack:
+    w = stack.pop()
+    buttons += [w] if isinstance(w, m.Button) else []
+    stack.extend(w.winfo_children())
+next(b for b in buttons if b.text == "Save").command()
+root.update()
+check("a price changed there is saved and used", app.cfg["potion_prices"] == {"red_potion": 80}
+      and json.loads(m.CONFIG_PATH.read_text())["potion_prices"] == {"red_potion": 80}
+      and app.potion_prices()["red_potion"] == 80)
+app.session.reset()
+del app.tracker.elapsed
+
 check("the typeface is the bundled one, or it fell back cleanly", app._own_fonts in (True, False) and bool(app.theme.fam["extra"]))
 app.close()
 

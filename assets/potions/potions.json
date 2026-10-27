@@ -1,0 +1,166 @@
+{
+ "source": "Prices, HP and MP: meowdb.com/msclassic/npc-shops/item-efficiency/consumables (NPC shop prices; 0 = not sold in shops). Pictures and count digits: the game's item icons and item-count font (UI/Basic.img/ItemNo), via maplestory.io.",
+ "potions": [
+  {
+   "key": "red_potion",
+   "name": "Red Potion",
+   "price": 50,
+   "hp": 100,
+   "mp": 0
+  },
+  {
+   "key": "orange_potion",
+   "name": "Orange Potion",
+   "price": 150,
+   "hp": 250,
+   "mp": 0
+  },
+  {
+   "key": "white_potion",
+   "name": "White Potion",
+   "price": 350,
+   "hp": 500,
+   "mp": 0
+  },
+  {
+   "key": "blue_potion",
+   "name": "Blue Potion",
+   "price": 220,
+   "hp": 0,
+   "mp": 200
+  },
+  {
+   "key": "elixir",
+   "name": "Elixir",
+   "price": 0,
+   "hp": 0,
+   "mp": 0
+  },
+  {
+   "key": "power_elixir",
+   "name": "Power Elixir",
+   "price": 0,
+   "hp": 0,
+   "mp": 0
+  },
+  {
+   "key": "mana_elixir",
+   "name": "Mana Elixir",
+   "price": 0,
+   "hp": 0,
+   "mp": 0
+  },
+  {
+   "key": "apple",
+   "name": "Apple",
+   "price": 20,
+   "hp": 40,
+   "mp": 0
+  },
+  {
+   "key": "meat",
+   "name": "Meat",
+   "price": 80,
+   "hp": 160,
+   "mp": 0
+  },
+  {
+   "key": "egg",
+   "name": "Egg",
+   "price": 30,
+   "hp": 60,
+   "mp": 0
+  },
+  {
+   "key": "orange",
+   "name": "Orange",
+   "price": 50,
+   "hp": 0,
+   "mp": 50
+  },
+  {
+   "key": "lemon",
+   "name": "Lemon",
+   "price": 150,
+   "hp": 0,
+   "mp": 150
+  },
+  {
+   "key": "salad",
+   "name": "Salad",
+   "price": 220,
+   "hp": 0,
+   "mp": 200
+  },
+  {
+   "key": "fried_chicken",
+   "name": "Fried Chicken",
+   "price": 60,
+   "hp": 120,
+   "mp": 0
+  },
+  {
+   "key": "pizza",
+   "name": "Pizza",
+   "price": 252,
+   "hp": 360,
+   "mp": 0
+  },
+  {
+   "key": "hamburger",
+   "name": "Hamburger",
+   "price": 350,
+   "hp": 500,
+   "mp": 0
+  },
+  {
+   "key": "hot_dog",
+   "name": "Hot Dog",
+   "price": 180,
+   "hp": 300,
+   "mp": 0
+  },
+  {
+   "key": "dried_squid",
+   "name": "Dried Squid",
+   "price": 180,
+   "hp": 300,
+   "mp": 0
+  },
+  {
+   "key": "fat_sausage",
+   "name": "Fat Sausage",
+   "price": 800,
+   "hp": 800,
+   "mp": 0
+  },
+  {
+   "key": "orange_juice",
+   "name": "Orange Juice",
+   "price": 540,
+   "hp": 0,
+   "mp": 450
+  },
+  {
+   "key": "grape_juice",
+   "name": "Grape Juice",
+   "price": 1260,
+   "hp": 0,
+   "mp": 900
+  },
+  {
+   "key": "pure_water",
+   "name": "Pure Water",
+   "price": 1120,
+   "hp": 0,
+   "mp": 800
+  },
+  {
+   "key": "unagi",
+   "name": "Unagi",
+   "price": 1000,
+   "hp": 1000,
+   "mp": 0
+  }
+ ]
+}
