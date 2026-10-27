@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.17-beta
+
+**New**
+- **HP and MP potion tiles**, under the three tiles at the top: a red one for your HP potion and a blue one for your MP potion, each with the potion's picture (the one it sees on your quickslot), how many are left, and how many you've used this session and what they cost. The number left turns red once it's down to **Warn at**. With more than one HP (or MP) potion on your keys, the tile shows the one you've used the most. Not in compact mode.
+
 ## 0.9.16-beta
 
 **New**

@@ -67,7 +67,7 @@ PLATFORM = create_platform()
 PLATFORM.setup_process()
 cv2.setNumThreads(1)
 
-VERSION = "0.9.16-beta"
+VERSION = "0.9.17-beta"
 WINDOW_TITLE = "Maple Classic Exp Overlay"    # the version is shown at the bottom, and in Settings
 OLD_TITLES = ("Maple EXP/hr",)               # what versions before 0.9.3 were called
 
@@ -4152,6 +4152,40 @@ class App:
         own = self.cfg.get("potion_prices") or {}
         return {p["key"]: own.get(p["key"], p["price"]) for p in self.reader.quickslot.catalog}
 
+    def _potion_icon(self, key):
+        """The potion's picture (a PIL image), loaded once."""
+        icons = self.__dict__.setdefault("_potion_icons", {})
+        if key not in icons:
+            try:
+                icons[key] = Image.open(ASSETS / "potions" / f"{key}.png").convert("RGBA")
+            except Exception:
+                icons[key] = None
+        return icons[key]
+
+    def _potion_tiles(self):
+        """What the HP and MP potion tiles show: for each, the potion of that kind on the quickslot
+        that was used the most this session (or the one seen), how many are left, and how many
+        were used and what they cost."""
+        p, prices = self.potions, self.potion_prices()
+        kinds = {c["key"]: c.get("kind", "hp") for c in self.reader.quickslot.catalog}
+        shown = {}
+        for kind in ("hp", "mp"):
+            keys = [k for k in p.counts if kinds.get(k) == kind]
+            if not keys:
+                shown[kind] = dict(icon=None, title=None, value="\u2014",
+                                   sub="Not on quickslot" if p.seen or self.tracker.req else "")
+                continue
+            key = max(keys, key=lambda k: (p.used.get(k, 0), -p.counts[k]))
+            used = p.used.get(key, 0)
+            cost = used * prices.get(key, 0)
+            sub = (f"{used} used \u00b7 -{fmt_num(cost) if cost < 10_000 else fmt_short(cost)}" if used and cost
+                   else f"{used} used" if used
+                   else "None used yet")
+            shown[kind] = dict(icon=self._potion_icon(key), title=self.potion_name(key),
+                               value=f"{fmt_num(p.counts[key])} left", sub=sub,
+                               low=p.counts[key] <= self.cfg["low_potions"])
+        return shown
+
     def potion_name(self, key):
         return next((p["name"] for p in self.reader.quickslot.catalog if p["key"] == key), key)
 
@@ -4245,7 +4279,7 @@ class App:
                      "Current": f"{fmt_num(shown[0])} [{shown[1]:.2f}%]" if shown else "\u2014",
                      "Mesos": mesos, "Mesos / 5 min": fmt_num(m.per_5min(el)),
                      "Potions": self._potions_text(), "Profit / hr": fmt_num(self._profit_rate(el))},
-            state=state, state_text=state_text)
+            potions=self._potion_tiles(), state=state, state_text=state_text)
         waiting = self.session.waiting
         self.session.tick(now)
         if self.session.waiting != waiting:             # just paused by itself: say why now
