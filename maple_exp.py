@@ -67,7 +67,7 @@ PLATFORM = create_platform()
 PLATFORM.setup_process()
 cv2.setNumThreads(1)
 
-VERSION = "0.9.17-beta"
+VERSION = "0.9.18-beta"
 WINDOW_TITLE = "Maple Classic Exp Overlay"    # the version is shown at the bottom, and in Settings
 OLD_TITLES = ("Maple EXP/hr",)               # what versions before 0.9.3 were called
 
@@ -1272,6 +1272,7 @@ class ScreenReader:
         self.next_job_read = 0.0
         self.quickslot = QuickslotReader(ASSETS / "potions")
         self.next_potions = 0.0
+        self.potions_look = None    # the quickslot at the last look, and its keys: {"image", "origin"}
 
     def use_window(self):
         self.mode, self.hwnd, self.box = "window", None, None
@@ -1577,7 +1578,9 @@ class ScreenReader:
         if not shot:
             return None
         img, sx, sy = shot                                # (clipped to the screens)
-        return q.read(img, g, (wx + ax - sx, wy + ay - sy))
+        counts = q.read(img, g, (wx + ax - sx, wy + ay - sy))
+        self.potions_look = {"image": img}
+        return counts
 
     def _readable(self, img, field):
         """Clear mesos digits at field? (Always yes while the mesos font is still being
@@ -4028,6 +4031,10 @@ class App:
                 log_activity("Potions read on the quickslot: " + ", ".join(
                     f"{self.potion_name(k)} {n}" for k, n in sorted(self.potions.counts.items())))
             self._check_low_potions()
+            text = self._quickslot_text()
+            if text != getattr(self, "_quickslot_logged", None):   # (only when it changes)
+                self._quickslot_logged = text
+                log_activity("Quickslot: " + text)
         if r.party is not None:                         # believe a new party size once seen twice
             seen, n = self._party_seen
             n = n + 1 if r.party == seen else 1
@@ -4146,6 +4153,18 @@ class App:
         except Exception as e:
             log_error("playing the low-potion sound", e)
             self.root.bell()
+
+    def _quickslot_text(self):
+        """What the last full look at the quickslot saw on each key, in words (View capture, overlay.log)."""
+        keys = self.reader.quickslot.keys
+        if not keys:
+            return "No counts seen on its keys yet." if self.reader.quickslot.digit_scale is None else "Looking..."
+        parts = []
+        for i, (_, n, potion, why) in enumerate(keys, 1):
+            if n is None:
+                continue
+            parts.append(f"key {i}: {self.potion_name(potion)} {n}" if potion else f"key {i}: {n}, {why}")
+        return "; ".join(parts) or "No counts seen on its keys."
 
     def potion_prices(self):
         """{key: mesos} for each potion: the price set in Settings, or the NPC shop's."""
@@ -4680,6 +4699,11 @@ class App:
             shots.append((mr.mesos_image, mr.mesos_boxes, f"Mesos. Read: {read}"))
         if r:
             shots.append(self._class_line())
+            look = self.reader.potions_look
+            if look:
+                boxes = [(x, y, x + w, y + h, "exp" if potion else "pct") for (x, y, w, h), _, potion, _ in
+                         self.reader.quickslot.keys]
+                shots.append((look["image"], boxes, "Quickslot. " + self._quickslot_text()))
             look = self.reader.map_look
             if look:
                 shots.append((look["image"], [], f"Map name. Read: {look['text'] or 'nothing (not clear yet)'}"))

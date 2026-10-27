@@ -40,6 +40,7 @@ SLOT_LEFT, SLOT_TOP = 199, -118
 SLOT_PITCH = (36.4, 35.6)
 SLOT_SIZE = 31
 SLOT_SLACK = 12             # how far from there a key's picture may be (the scale is a guess)
+GRID_MIN = 0.4             # how clearly the quickslot's keys must show to line up with them (~0.6)
 SEARCH_SECONDS = 30         # how often every key is checked for a (new) potion
 COUNT_MAX = 9999
 
@@ -101,7 +102,10 @@ class QuickslotReader:
         self.digit_scale = None     # the UI's scale, as the count digits fit it best
         self.next_search = 0.0
         self._where = None          # (EXP digit height, anchor) the scale was found for
+        self.lined_up = None        # the anchor, moved to where the quickslot's keys really are
         self.found = []             # what the last look found: [(key, (x, y, w, h), count)]
+        self.keys = []              # what the last look at every key saw: [(box, count, potion, why)]
+        self.closest = []           # the pictures closest to the last one looked at: [(rms, key, shape)]
 
     def _icons_at(self, s):
         s = round(s, 3)
@@ -128,7 +132,7 @@ class QuickslotReader:
     def _classify(self, img, scales, keys=None):
         """[(rms, key, x, y, w, h, scale)]: the potion in img (a key, with a little room around
         it), or [] if none fits well enough, or two fit nearly as well."""
-        fits = []
+        fits, self.closest = [], []
         for key in (keys or self.icons):
             best = None                               # this picture's best spot and size
             for s in scales:
@@ -143,14 +147,23 @@ class QuickslotReader:
             # is close to a White Potion's colour without looking like one)
             if best and best[0] <= ICON_MAX + ICON_LEAD:
                 shape = self._shape(img, *best[1:4], best[6])
+                self.closest.append((best[0], key, shape))
                 if shape >= SHAPE_MIN:
                     fits.append(best + (shape,))
+            elif best:
+                self.closest.append((best[0], key, None))
         fits.sort()
+        self.closest.sort()                           # (for the log and View capture)
         if not fits or fits[0][0] > ICON_MAX:
             return []
-        if any(f[0] - fits[0][0] < ICON_LEAD and f[7] >= RIVAL_SHAPE for f in fits[1:]):
+        # Of the pictures nearly as close in colour as the closest, the one whose light and dark
+        # parts line up best wins (a White Potion comes close in colour to most potions, and can
+        # even be a little closer, but lines up at only ~0.6): unless another lines up well too.
+        near = [f for f in fits if f[0] - fits[0][0] < ICON_LEAD and f[0] <= ICON_MAX]
+        near.sort(key=lambda f: -f[7])
+        if len(near) > 1 and near[1][7] >= RIVAL_SHAPE:
             return []                                  # two potions fit nearly as well: unsure
-        return [fits[0][:7]]
+        return [near[0][:7]]
 
     def _shape(self, img, key, x, y, s):
         """Not just the right colours: how well the picture's light and dark parts line up with
@@ -172,10 +185,11 @@ class QuickslotReader:
 
     def _find_digit_scale(self, grey, anchor, s):
         """The UI's scale, which s (from the EXP digits) is only a guess at: the size at which
-        the counts on all the keys (where the keys are at that size) fit the game's digits best."""
+        the counts on all the keys (lined up with the quickslot at that size) fit the game's digits best."""
         def fit(size):
-            reads = [self._count_at(grey, box, size) for box in self.slot_boxes(anchor, size)]
-            return sum(len(str(r[0])) * r[1] for r in reads if r)
+            boxes = self.slot_boxes(self._line_up(grey, anchor, size), size)
+            reads = [self._count_at(grey, box, size) for box in boxes]
+            return sum(r[1] for r in reads if r)             # (each key once: a long misread isn't worth more)
         best = max(((fit(s * f), s * f) for f in np.arange(0.86, 1.15, 0.02)), key=lambda b: b[0])
         if best[0] == 0:
             return None
@@ -242,6 +256,41 @@ class QuickslotReader:
         return None if best is None else (best[0], best[1] / len(str(best[0])))
 
     @staticmethod
+    def _grid(s):
+        """(picture, mask) of the quickslot's 8 keys at scale s: light keys on a dark frame, without
+        the middle of each key (where a potion's picture is), for lining the keys up with it."""
+        px, py, size = SLOT_PITCH[0] * s, SLOT_PITCH[1] * s, SLOT_SIZE * s
+        H, W = int(py + size + 8), int(3 * px + size + 8)
+        pic, mask = np.zeros((H, W), np.uint8), np.ones((H, W), np.uint8)
+        for r in range(2):
+            for c in range(4):
+                x, y = int(4 + c * px), int(4 + r * py)
+                pic[y + 2:y + int(size) - 2, x + 2:x + int(size) - 2] = 255
+                mask[y + int(0.2 * size):y + int(0.8 * size), x + int(0.2 * size):x + int(0.8 * size)] = 0
+        return pic, mask
+
+    def _line_up(self, grey, anchor, s):
+        """The anchor moved so the keys sit exactly on the quickslot found near where they should
+        be (the EXP number gives where only to within a few pixels), or as it was if it isn't clear."""
+        pic, mask = self._grid(s)
+        x, y = self.slot_boxes(anchor, s)[0][:2]
+        reach = self.reach(s)
+        x0, y0 = max(0, x - 4 - reach), max(0, y - 4 - reach)       # (as far as the picture goes)
+        area = grey[y0:y - 4 + reach + pic.shape[0], x0:x - 4 + reach + pic.shape[1]]
+        if area.shape[0] < pic.shape[0] or area.shape[1] < pic.shape[1]:
+            return anchor
+        r = np.nan_to_num(cv2.matchTemplate(area, pic, cv2.TM_CCOEFF_NORMED, mask=mask), nan=-1.0)
+        _, v, _, (dx, dy) = cv2.minMaxLoc(r)
+        if v < GRID_MIN:
+            return anchor
+        return anchor[0] + x0 + dx - (x - 4), anchor[1] + y0 + dy - (y - 4)
+
+    @staticmethod
+    def reach(s):
+        """How far from where the EXP number says the quickslot may really be, in pixels."""
+        return int(0.6 * SLOT_PITCH[0] * s)
+
+    @staticmethod
     def slot_boxes(anchor, s):
         """Where the 8 quickslot keys are (x, y, w, h), from where the EXP number starts (anchor:
         its left end and middle) and the UI's scale s. The quickslot sits above the right end
@@ -255,7 +304,7 @@ class QuickslotReader:
     def area(anchor, s):
         """The part of the screen the quickslot is in, with room to spare: (x0, y0, x1, y1)."""
         boxes = QuickslotReader.slot_boxes(anchor, s)
-        pad = int(SLOT_SLACK * s) + 2
+        pad = QuickslotReader.reach(s * 1.15) + int(SLOT_SLACK * s) + 6   # (room to line the keys up)
         return (min(b[0] for b in boxes) - pad, min(b[1] for b in boxes) - pad,
                 max(b[0] + b[2] for b in boxes) + pad, max(b[1] + b[3] for b in boxes) + pad)
 
@@ -279,9 +328,13 @@ class QuickslotReader:
                 self.digit_scale = self._find_digit_scale(grey, anchor, s0)
             if self.digit_scale is None:                   # no counts anywhere: no potions
                 return {}
-            boxes = self.slot_boxes(anchor, self.digit_scale)
+            self.lined_up = self._line_up(grey, anchor, self.digit_scale)
+            boxes = self.slot_boxes(self.lined_up, self.digit_scale)
+            self.keys = []
             for i, (x, y, w, h) in enumerate(boxes):
-                if self.read_count(grey, (x, y, w, h)) is None:
+                n = self.read_count(grey, (x, y, w, h))
+                if n is None:
+                    self.keys.append(((x, y, w, h), None, None, "no count"))
                     continue                               # no count: not a potion (a skill, or empty)
                 pad = int(SLOT_SLACK * s0)
                 x0, y0 = max(0, x - pad), max(0, y - pad)
@@ -294,6 +347,11 @@ class QuickslotReader:
                 if hits:
                     _, key, hx, hy, hw, hh, hs = hits[0]
                     self.slots[i] = (key, hs, x0 + hx, y0 + hy, hw, hh, (x, y, w, h))
+                    self.keys.append(((x, y, w, h), n, key, ""))
+                else:
+                    near = ", ".join(f"{k} {v:.0f}" + (f"/{sh:.2f}" if sh is not None else "")
+                                     for v, k, sh in self.closest[:2])
+                    self.keys.append(((x, y, w, h), n, None, f"no potion matched (closest: {near})"))
         counts, gone = {}, []
         for i, (key, s, x, y, w, h, box) in self.slots.items():
             pad = max(3, int(0.15 * w))

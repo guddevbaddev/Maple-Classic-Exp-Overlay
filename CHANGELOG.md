@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.18-beta
+
+**Fixed**
+- **Potions missed on the quickslot** (a Lemon, for one): when a White Potion's colours came about as close, the potion was left out instead of being recognised. Now the picture whose light and dark parts also match wins.
+- **The quickslot is found exactly:** the keys are lined up with the quickslot itself, not only worked out from where the EXP number is. A few pixels off could read the wrong spot (an Orange Potion's 269 as 1269, or miss a key).
+
+**New**
+- **View capture** shows the quickslot, with a box on each key (yellow: a potion; blue: a count but no potion recognised), and says what each key read. overlay.log notes it each time it changes, for bug reports.
+
 ## 0.9.17-beta
 
 **New**
