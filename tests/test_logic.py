@@ -441,6 +441,11 @@ m.CONFIG_PATH.write_text(json.dumps({"potion_prices": {"red_potion": 45, "blue_p
                          encoding="utf-8")
 check("potion prices set in Settings are kept, bad ones left out",
       m.load_config()["potion_prices"] == {"red_potion": 45})
+m.CONFIG_PATH.write_text(json.dumps({"low_potions": 0}), encoding="utf-8")
+check("a Warn at number out of range falls back to 15", m.load_config()["low_potions"] == 15)
+m.CONFIG_PATH.write_text(json.dumps({"low_potions": 50, "low_potion_alert": False}), encoding="utf-8")
+cfg = m.load_config()
+check("Warn at and the sound switch are kept", cfg["low_potions"] == 50 and cfg["low_potion_alert"] is False)
 m.CONFIG_PATH.write_text("[1, 2", encoding="utf-8")
 check("an unreadable settings file gives the defaults", m.load_config()["topmost"] is True)
 

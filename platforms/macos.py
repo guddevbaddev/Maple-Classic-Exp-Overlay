@@ -219,6 +219,11 @@ class MacPlatform(Platform):
         except Exception:
             super().alert(title, text)
 
+    def play_alert(self):
+        subprocess.Popen(["afplay", "/System/Library/Sounds/Glass.aiff"],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+
     def copy_image(self, path):
         # AppleScript reads the file as PNG data onto the clipboard. The path goes in as an
         # argument, never into the script's text.

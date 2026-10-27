@@ -4,6 +4,7 @@
 
 **New**
 - **Potions** (beta): the overlay reads the count on each quickslot key with a potion on it (it knows them by the game's own pictures). A count going down is potions used, and their price comes off your profit; a count going up is potions picked up, which cover some of it. **Details** shows both (`-1,000 / +100`) and **Profit / hr**: mesos made, less what potions cost. Red, Orange, White and Blue Potions, the Elixirs, and the foods NPC shops sell are known.
+- **A sound when potions run low:** while tracking, each potion you use once it's down to 15 or fewer on your quickslot plays a sound, and the status line says which and how many are left. **Settings > Warn at** changes the number; **Sound when potions run low** turns it off.
 - **Settings > Potion prices:** what each potion is worth, with its picture. They start at the NPC shop price from meowdb (Classic World's prices); set your own (say, the free market price), or **Shop prices** to put them back. Elixirs start at 0 (not sold in shops).
 
 **Changed**

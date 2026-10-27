@@ -295,6 +295,11 @@ class WindowsPlatform(Platform):
         except Exception:
             super().alert(title, text)
 
+    def play_alert(self):
+        import winsound
+        winsound.PlaySound("SystemExclamation", winsound.SND_ALIAS | winsound.SND_ASYNC)
+        return True
+
     def copy_image(self, path):
         # As a bitmap (what every program pastes, Discord included) and as PNG (sharper, for those
         # that take it). The clipboard owns the memory once it's set; until then it's freed here.

@@ -96,6 +96,7 @@ LOG_BLOCK = 300             # seconds of non-stop EXP gain behind each log updat
 PQ_GAP = 600                # PQ mode: seconds without EXP before it pauses (stages can go a while without)
 PQ_MAP = "Party Quest"      # PQ mode: the log line a whole party quest goes on, whatever its maps
 SCREEN_GAP = 10             # seconds without seeing the EXP bar before it pauses by itself
+LOW_POTIONS_MAX = 500       # Settings: the most "Warn at ... left" goes up to
 MESOS_PATH = DATA_DIR / "mesos_digits.npz"             # learned as you play...
 MESOS_START_PATH = ASSETS / "mesos_digits.npz"          # ...starting from these
 MESOS_BOX_PATH = ASSETS / "mesos_box.npz"
@@ -105,7 +106,8 @@ OUTLINE_EAGER = 3           # ...in the first minute after starting or Reset, wh
 EAGER_SECONDS = 60          # opened (about 60-170 ms a search, at 900p-1440p)
 DEFAULTS = {"gap_seconds": 120, "transparency": 0, "topmost": True,
             "check_updates": True, "skip_version": "", "ui_scale": 100, "compact": False, "hotkeys_on": True,
-            "details": False, "level": 0, "auto_pause": True}       # level: for a bar that shows only the % (0: unknown)
+            "details": False, "level": 0, "auto_pause": True,       # level: for a bar that shows only the % (0: unknown)
+            "low_potion_alert": True, "low_potions": 15}            # a sound for each one used once a potion is down to this
 # Settings > Size, in %: only these, so the window can't get too small to read or use.
 UI_SCALES = (60, 70, 80, 90, 100, 110, 125, 150, 175, 200)
 MAX_TRANSPARENCY = 40       # %: more and the window can fade out of sight, with Settings in it
@@ -232,7 +234,8 @@ def load_config():
     cfg["gap_2min"] = True
     for key, default in DEFAULTS.items():
         value = cfg.get(key)
-        if type(value) is not type(default) or (key == "gap_seconds" and not 1 <= value <= 3600):
+        if type(value) is not type(default) or (key == "gap_seconds" and not 1 <= value <= 3600) or (
+                key == "low_potions" and not 1 <= value <= LOW_POTIONS_MAX):
             cfg[key] = default
     prices = cfg.get("potion_prices")
     cfg["potion_prices"] = {k: v for k, v in prices.items() if isinstance(k, str) and type(v) is int
@@ -2815,6 +2818,8 @@ class App:
         self.session = Session(self.cfg["gap_seconds"])
         self.session.auto_pause = self.cfg["auto_pause"]
         self.tracker, self.meso, self.potions = self.session.exp, self.session.meso, self.session.potions
+        self.low_counts = {}                # the quickslot's counts the low-potion sound last looked at
+        self.potion_note = None             # (what the last low-potion warning said, when)
         self.party = 1
         self._party_seen = (None, 0)
         self.last_mesos = None
@@ -3463,6 +3468,29 @@ class App:
                command=lambda: self.open_potion_prices(w), bg=BG).pack(side="right")
         tk.Label(body, text="What the potions on your quickslot cost: used ones come off your profit, "
                  "picked-up ones cover some of it.", wraplength=wrap, justify="left", **dim).pack(anchor="w", pady=(px(5), 0))
+        low_alert = tk.BooleanVar(value=bool(self.cfg["low_potion_alert"]))
+        self._switch(body, "Sound when potions run low", low_alert).pack(anchor="w", pady=(px(12), px(6)))
+        low = tk.StringVar(value=str(self.cfg["low_potions"]))
+        line = tk.Frame(body, bg=BG)
+        line.pack(fill="x")
+        tk.Label(line, text="Warn at", **text).pack(side="left")
+        low_step = tk.Frame(line, bg=BG)
+        low_step.pack(side="right")
+
+        def low_by(by):
+            try:
+                now_ = int(low.get())
+            except ValueError:
+                now_ = self.cfg["low_potions"]
+            low.set(str(min(LOW_POTIONS_MAX, max(1, now_ + by))))
+        Button(low_step, th, text="−", kind="secondary", width=38, height=34, radius=10, size=15,
+               command=lambda: low_by(-5), bg=BG).pack(side="left")
+        tk.Label(low_step, textvariable=low, width=4, bg=BG, fg=FG, font=th.font("bold", 12)).pack(side="left")
+        Button(low_step, th, text="+", kind="secondary", width=38, height=34, radius=10, size=15,
+               command=lambda: low_by(5), bg=BG).pack(side="left")
+        tk.Label(low_step, text="left", bg=BG, fg=DIM, font=th.font("regular", 11)).pack(side="left", padx=(px(6), 0))
+        tk.Label(body, text="While tracking, a sound plays each time you use a potion that's down to this many "
+                 "on your quickslot.", wraplength=wrap, justify="left", **dim).pack(anchor="w", pady=(px(5), 0))
 
         self._section(body, "Window")
         transparency = tk.IntVar(value=int(self.cfg["transparency"]))
@@ -3515,6 +3543,13 @@ class App:
             self.cfg["topmost"] = bool(topmost.get())
             self.cfg["check_updates"] = bool(updates.get())
             self.cfg["auto_pause"] = self.session.auto_pause = bool(auto_pause.get())
+            self.cfg["low_potion_alert"] = bool(low_alert.get())
+            try:
+                limit = int(low.get())
+            except ValueError:
+                limit = 0
+            if 1 <= limit <= LOW_POTIONS_MAX:
+                self.cfg["low_potions"] = limit
             self._apply_window_settings()
             w.attributes("-topmost", self.cfg["topmost"])
             scale = int(size.get().rstrip("%"))
@@ -3524,7 +3559,7 @@ class App:
                 self.root.after(60, self._reopen_settings)        # (drawn again at the new size)
             save_config(self.cfg)
 
-        for var in (auto_pause, gap, transparency, topmost, updates, size):
+        for var in (auto_pause, gap, transparency, topmost, updates, size, low_alert, low):
             var.trace_add("write", apply)
         self._hotkey_settings(body)
         buttons = tk.Frame(body, bg=BG)
@@ -3959,6 +3994,7 @@ class App:
             if not had and self.potions.seen:
                 log_activity("Potions read on the quickslot: " + ", ".join(
                     f"{self.potion_name(k)} {n}" for k, n in sorted(self.potions.counts.items())))
+            self._check_low_potions()
         if r.party is not None:                         # believe a new party size once seen twice
             seen, n = self._party_seen
             n = n + 1 if r.party == seen else 1
@@ -4005,6 +4041,8 @@ class App:
         elif r.pct is not None:
             status = ("Your EXP bar only shows the %, so the overlay needs your level: "
                       "... menu > Set your level.")
+        elif self.potion_note and time.monotonic() - self.potion_note[1] < 10:
+            status = self.potion_note[0]
         else:
             status = r.where
         if self.note:
@@ -4024,6 +4062,8 @@ class App:
             return f"Level up! You're now Lv {self.level}." if self.level else "Level up!"
         if self.hotkey_note and time.monotonic() - self.hotkey_note[1] < 4:
             return self.hotkey_note[0]
+        if self.potion_note and time.monotonic() - self.potion_note[1] < 10:
+            return self.potion_note[0]
         if self.died_at and time.monotonic() - self.died_at < 30 and t.last_loss:
             return f"You died and lost {t.last_loss:.1f}% EXP. That isn't taken off your EXP/hr."
         if self.rejected >= 5:
@@ -4047,6 +4087,25 @@ class App:
         if t.elapsed() > 0:
             return "Paused. Press Resume to carry on."
         return "Ready. Press Start when you begin farming."
+
+    def _check_low_potions(self):
+        """Plays a sound each time a potion is used (its count on the quickslot goes down) while
+        it's at or below the "Warn at" number, while tracking, and says which and how many are left."""
+        limit, before = self.cfg["low_potions"], self.low_counts
+        self.low_counts = dict(self.potions.counts)
+        new = {k: n for k, n in self.low_counts.items() if n <= limit and n < before.get(k, n)}
+        if not new or not self.session.on or not self.cfg["low_potion_alert"]:
+            return
+        try:
+            if not PLATFORM.play_alert():
+                self.root.bell()
+        except Exception as e:
+            log_error("playing the low-potion sound", e)
+            self.root.bell()
+        text = "Low on potions: " + ", ".join(f"{self.potion_name(k)} ({n} left)" for k, n in sorted(new.items())) + "."
+        self.potion_note = (text, time.monotonic())
+        self.status.set(text)
+        log_activity(text)
 
     def potion_prices(self):
         """{key: mesos} for each potion: the price set in Settings, or the NPC shop's."""
@@ -4195,6 +4254,7 @@ class App:
 
     def reset(self):
         self.session.reset()
+        self.low_counts = {}
         self.autolog.reset_clock()
         self.skip_log = False
         self._show_skip_log()

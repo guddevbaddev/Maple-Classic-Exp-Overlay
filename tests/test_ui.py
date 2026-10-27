@@ -604,6 +604,47 @@ check("a price changed there is saved and used", app.cfg["potion_prices"] == {"r
       and json.loads(m.CONFIG_PATH.read_text())["potion_prices"] == {"red_potion": 80}
       and app.potion_prices()["red_potion"] == 80)
 app.session.reset()
+
+# ---- the low-potion sound: each potion used once it's down to "Warn at" (15 to start with)
+beeps, real_alert = [], m.PLATFORM.play_alert
+m.PLATFORM.play_alert = lambda: (beeps.append(1), True)[1]
+app.session.on = True
+check("the low-potion sound is on, at 15 left, to start with",
+      app.cfg["low_potion_alert"] is True and app.cfg["low_potions"] == 15)
+
+
+def potion_count(n, times=2):
+    for _ in range(times):
+        app._handle(m.Reading(where="MapleStory window 1920x1080", potions={"red_potion": n}))
+
+
+potion_count(20)
+potion_count(16)
+check("no sound while there are more than 15", beeps == [])
+potion_count(15)
+check(f"a sound when one is used and 15 are left ({app.status.get()})",
+      len(beeps) == 1 and "Red Potion (15 left)" in app.status.get())
+potion_count(14)
+potion_count(12)
+check(f"...and each time one is used after that ({len(beeps)})", len(beeps) == 3)
+potion_count(12, times=4)
+check("not again while none is used", len(beeps) == 3)
+potion_count(40, times=3)
+potion_count(39)
+check("restocked above 15: quiet again", len(beeps) == 3)
+app.cfg["low_potions"] = 40
+potion_count(38)
+check("Warn at can be changed (40: one used at 38 left sounds)", len(beeps) == 4)
+app.cfg["low_potion_alert"] = False
+potion_count(37)
+check("turned off, it stays quiet", len(beeps) == 4)
+app.cfg["low_potion_alert"], app.cfg["low_potions"] = True, 15
+app.session.on = False
+potion_count(10, times=3)
+check("not while tracking is paused (Pause pressed)", len(beeps) == 4)
+m.PLATFORM.play_alert = real_alert
+app.session.reset()
+app.low_counts = {}
 del app.tracker.elapsed
 
 check("the typeface is the bundled one, or it fell back cleanly", app._own_fonts in (True, False) and bool(app.theme.fam["extra"]))
