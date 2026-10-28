@@ -1571,14 +1571,24 @@ class ScreenReader:
         x0, y0, x1, y1 = max(0, x0), max(0, y0), min(ww, x1), min(wh, y1)
         if x1 - x0 < 4 * g or y1 - y0 < 2 * g:
             return None
-        if self._covered(wx + x0, wy + y0, x1 - x0, y1 - y0):
+        # (the area has room around the keys to line them up: this window may sit in that room,
+        # docked next to the quickslot, as long as it leaves the keys themselves clear)
+        keys = q.slot_boxes((ax, ay), g * QS_SCALE_PER_GH)
+        kx0, ky0 = min(b[0] for b in keys), min(b[1] for b in keys)
+        kx1, ky1 = max(b[0] + b[2] for b in keys), max(b[1] + b[3] for b in keys)
+        if self._covered(wx + kx0, wy + ky0, kx1 - kx0, ky1 - ky0):
             notes.append("This window is covering the quickslot's potions.")
             return None
-        shot = grab(sct, wx + x0, wy + y0, x1 - x0, y1 - y0)
+        shot = self._hide_own(grab(sct, wx + x0, wy + y0, x1 - x0, y1 - y0))
         if not shot:
             return None
         img, sx, sy = shot                                # (clipped to the screens)
         counts = q.read(img, g, (wx + ax - sx, wy + ay - sy))
+        # a key this window covers part of (the UI's size was only a guess) isn't read: its count
+        # could be cut short
+        for key, *_, (bx, by, bw, bh) in q.slots.values():
+            if self._covered(sx + bx - bw // 3, sy + by, bw + bw // 3, bh):
+                counts.pop(key, None)
         self.potions_look = {"image": img}
         return counts
 
