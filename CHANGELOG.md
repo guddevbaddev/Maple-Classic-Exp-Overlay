@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.24-beta
+
+**Fixed**
+- **Mac: the overlay vanished after moving windows between desktops** in Mission Control (swiping up), and couldn't be dragged back. With **Always on top** on, it's now on every desktop, including the game's own when it's full screen, so it stays where you can see it. If it's ever gone anyway, click its icon in the Dock: it comes back to the front, on screen.
 ## 0.9.23-beta
 
 **Fixed**

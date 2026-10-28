@@ -44,6 +44,23 @@ _KEYS = {k: _vp.in_dll(_cg, "kCGWindow" + k).value
 _ON_SCREEN, _ONLY_THIS, _NO_DESKTOP = 1, 8, 16          # kCGWindowListOption...
 _TOPMOST = 19                                           # the window layer of Always on top (tkinter's -topmost)
 
+# The Objective-C runtime, to reach the overlay's own NSWindow (which Tk doesn't offer).
+_objc = ctypes.CDLL("/usr/lib/libobjc.A.dylib")
+_Class = _api(_objc.objc_getClass, _vp, ctypes.c_char_p)
+_Sel = _api(_objc.sel_registerName, _vp, ctypes.c_char_p)
+
+
+def _send(restype, *argtypes):
+    """objc_msgSend with this call's exact types (needed on Apple silicon)."""
+    return ctypes.CFUNCTYPE(restype, _vp, _vp, *argtypes)(("objc_msgSend", _objc))
+
+
+_send_id, _send_uint, _send_text = _send(_vp), _send(ctypes.c_ulong), _send(ctypes.c_char_p)
+_send_at, _send_set = _send(_vp, ctypes.c_ulong), _send(None, ctypes.c_ulong)
+# NSWindowCollectionBehavior: on every desktop (Space), and over a full-screen app such as the
+# game; "move to the active desktop" can't be on at the same time.
+_ALL_SPACES, _TO_ACTIVE_SPACE, _FULL_SCREEN_AUX = 1 << 0, 1 << 1, 1 << 8
+
 MacWindow = namedtuple("MacWindow", "number pid owner title layer rect onscreen")
 
 # Programs whose windows can have "MapleStory" in the title without being the game.
@@ -178,6 +195,32 @@ class MacPlatform(Platform):
                 if rx <= x < rx + rw and ry <= y < ry + rh:
                     return tuple(round(v) for v in w.rect)
         return None
+
+    def _ns_windows(self, title):
+        """This program's NSWindows with this title."""
+        windows = _send_id(_send_id(_Class(b"NSApplication"), _Sel(b"sharedApplication")), _Sel(b"windows"))
+        found = []
+        for i in range(_send_uint(windows, _Sel(b"count")) if windows else 0):
+            w = _send_at(windows, _Sel(b"objectAtIndex:"), i)
+            name = _send_id(w, _Sel(b"title"))
+            if name and (_send_text(name, _Sel(b"UTF8String")) or b"").decode("utf-8", "replace") == title:
+                found.append(w)
+        return found
+
+    def on_every_desktop(self, root, on):
+        # Without it, an always-on-top window stays on the desktop it was opened on: moving windows
+        # between desktops in Mission Control (or the game going full screen) loses it.
+        try:
+            windows = self._ns_windows(root.title())
+            for w in windows:
+                now = _send_uint(w, _Sel(b"collectionBehavior"))
+                new = (now & ~_TO_ACTIVE_SPACE) | _ALL_SPACES | _FULL_SCREEN_AUX if on \
+                    else now & ~(_ALL_SPACES | _FULL_SCREEN_AUX)
+                if new != now:
+                    _send_set(w, _Sel(b"setCollectionBehavior:"), new)
+            return bool(windows)
+        except Exception:
+            return False
 
     def screen_dpi(self, x, y):
         return 96                                    # a point is about a Windows pixel at 100% scaling
