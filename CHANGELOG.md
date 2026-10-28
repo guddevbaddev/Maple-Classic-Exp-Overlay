@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.23-beta
 
 **Fixed**
 - **Potions weren't read with the overlay docked right next to the quickslot** ("This window is covering the quickslot's potions"). The overlay now only skips them when it covers the quickslot's keys themselves.
