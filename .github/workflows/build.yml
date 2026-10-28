@@ -207,7 +207,7 @@ jobs:
     # It runs after the Windows build, so on a version tag the draft release is already there
     # to add the Mac zip to.
     needs: build
-    runs-on: macos-14            # the oldest macOS the app runs on: Homebrew's Tesseract is built for the one it's on
+    runs-on: macos-latest        # (the most Macs GitHub has: macOS 14 ones can take too long to come free)
     permissions:
       contents: write             # adding to the draft release (version tags only)
       id-token: write             # signing the attestation
@@ -233,27 +233,46 @@ jobs:
           python tests/test_report.py
           python tests/test_update.py
       - name: Build Tesseract for macOS 14.0 (Homebrew's is built for the macOS it's on)
-        # The app's Tesseract must run on every macOS the app does. Homebrew builds Tesseract
-        # for the runner's own macOS (14.8 here), so it's built from Tesseract's own source,
-        # at a commit checked here, for macOS 14.0. libtesseract goes in the program itself;
-        # only Homebrew's Leptonica (built for 14.0) comes along as a library.
+        # The app's Tesseract must run on every macOS the app does (14.0 and newer). Homebrew builds
+        # it, and the libraries it needs, for the runner's own macOS, so they're built from their own
+        # source here, each at a commit checked here, for macOS 14.0: libpng, then Leptonica (with
+        # PNG only: that's all the overlay gives Tesseract), then Tesseract. libtesseract goes in the
+        # program itself; libpng and Leptonica come along as libraries. (build.py checks that no
+        # part of the app needs a newer macOS.)
         shell: bash
         run: |
-          src="$RUNNER_TEMP/tesseract-src"; out="$RUNNER_TEMP/tesseract"
-          git clone --quiet --depth 1 --branch 5.5.3 https://github.com/tesseract-ocr/tesseract "$src"
-          commit=$(git -C "$src" rev-parse HEAD)
-          if [ "$commit" != "db0ec62f81b0737fbbe184d8fea40af5738f8eef" ]; then
-            echo "::error::Tesseract 5.5.3 isn't the commit it was checked as ($commit)."
-            exit 1
-          fi
-          cmake -S "$src" -B "$src/build" -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0 -DCMAKE_PREFIX_PATH="$(brew --prefix leptonica)" \
-            -DCMAKE_INSTALL_PREFIX="$out" -DBUILD_SHARED_LIBS=OFF -DBUILD_TRAINING_TOOLS=OFF \
-            -DGRAPHICS_DISABLED=ON -DDISABLE_CURL=ON -DDISABLE_ARCHIVE=ON -DDISABLE_TIFF=ON \
-            -DENABLE_NATIVE=OFF -DENABLE_CCACHE=OFF -DOPENMP_BUILD=OFF -DINSTALL_CONFIGS=OFF
-          cmake --build "$src/build"
-          cmake --install "$src/build"
-          cp "$src/LICENSE" "$out/LICENSE"
+          work="$RUNNER_TEMP/src"; deps="$RUNNER_TEMP/deps"; out="$RUNNER_TEMP/tesseract"
+          fetch() {          # folder, repository, tag, the commit it was checked as
+            git clone --quiet --depth 1 --branch "$3" "https://github.com/$2" "$work/$1"
+            got=$(git -C "$work/$1" rev-parse HEAD)
+            if [ "$got" != "$4" ]; then
+              echo "::error::$1 $3 isn't the commit it was checked as ($got)."
+              exit 1
+            fi
+          }
+          fetch libpng pnggroup/libpng v1.6.59 cd952f49f95bb27154ae77dbb103032d95f6e580
+          fetch leptonica DanBloomberg/leptonica 1.87.0 13275a278eb55b5746e33f95fbf5a2c8f604b3ab
+          fetch tesseract tesseract-ocr/tesseract 5.5.3 db0ec62f81b0737fbbe184d8fea40af5738f8eef
+          # (the libraries are named by where they're installed, so the app's build finds and copies them)
+          common=(-G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0
+                  -DCMAKE_PREFIX_PATH="$deps" -DCMAKE_INSTALL_NAME_DIR="$deps/lib" -DCMAKE_FIND_FRAMEWORK=NEVER)
+          cmake -S "$work/libpng" -B "$work/libpng/build" "${common[@]}" -DCMAKE_INSTALL_PREFIX="$deps" \
+            -DPNG_SHARED=ON -DPNG_STATIC=OFF -DPNG_TESTS=OFF -DPNG_TOOLS=OFF -DPNG_FRAMEWORK=OFF
+          cmake --build "$work/libpng/build"
+          cmake --install "$work/libpng/build"
+          cmake -S "$work/leptonica" -B "$work/leptonica/build" "${common[@]}" -DCMAKE_INSTALL_PREFIX="$deps" \
+            -DBUILD_SHARED_LIBS=ON -DSW_BUILD=OFF -DBUILD_PROG=OFF -DENABLE_PNG=ON -DENABLE_ZLIB=ON \
+            -DENABLE_GIF=OFF -DENABLE_JPEG=OFF -DENABLE_TIFF=OFF -DENABLE_WEBP=OFF -DENABLE_OPENJPEG=OFF
+          cmake --build "$work/leptonica/build"
+          cmake --install "$work/leptonica/build"
+          cmake -S "$work/tesseract" -B "$work/tesseract/build" "${common[@]}" -DCMAKE_INSTALL_PREFIX="$out" \
+            -DBUILD_SHARED_LIBS=OFF -DSW_BUILD=OFF -DBUILD_TRAINING_TOOLS=OFF -DGRAPHICS_DISABLED=ON \
+            -DDISABLE_CURL=ON -DDISABLE_ARCHIVE=ON -DDISABLE_TIFF=ON -DENABLE_NATIVE=OFF -DENABLE_CCACHE=OFF \
+            -DOPENMP_BUILD=OFF -DINSTALL_CONFIGS=OFF
+          cmake --build "$work/tesseract/build"
+          cmake --install "$work/tesseract/build"
+          cp "$work/tesseract/LICENSE" "$out/LICENSE"
+          otool -L "$out/bin/tesseract"
           echo "TESSERACT_BIN=$out/bin/tesseract" >> "$GITHUB_ENV"
           echo "TESSDATA_DIR=$(brew --prefix tesseract)/share/tessdata" >> "$GITHUB_ENV"
       - name: Build
