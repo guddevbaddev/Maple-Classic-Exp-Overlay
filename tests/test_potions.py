@@ -120,6 +120,27 @@ for gh, anchor in ((7.0, (-60 - 100, 293 - 160)), (7.5, (-55 - 100, 290 - 160)),
     check(f"reads the Lemon and the Meat at the game's own size, and nothing else ({gh} px: {got})",
           got == {"lemon": 446, "meat": 491})
 
+# ---- a Mac's screenshots come in the display's colours (Display P3): a Lemon's yellow is paler
+# there, too far from the picture's own colours, so on a Mac the pictures are tried in P3's too
+def display_p3(bgr):
+    return potions._display_p3(np.dstack([bgr, np.full(bgr.shape[:2], 255, np.uint8)]))[..., :3]
+
+
+for name, shot_, gh, anchor, want_ in (
+        ("Lemon and Meat", meat, 7.0, (-60 - 100, 293 - 160), {"lemon": 446, "meat": 491}),
+        ("Orange Potion and Lemon", lemon, 11.0, (404 - 600, 1085 - 870), {"orange_potion": 269, "lemon": 266})):
+    for p3 in (False, True):
+        got = potions.QuickslotReader(ASSETS, display_p3=True).read(display_p3(shot_) if p3 else shot_,
+                                                                    gh, anchor, now=0)
+        check(f"on a Mac, reads the {name} in {'Display P3' if p3 else 'sRGB'} colours ({got})", got == want_)
+for gh, s in ((7.0, 0.875), (11.0, 1.35), (22.0, 2.75)):
+    img = quickslot(layout, s)
+    got = potions.QuickslotReader(ASSETS, display_p3=True).read(img, gh, (300, 500), now=0)
+    check(f"...and reads nothing wrong for it (EXP digits {gh} px: {got})",
+          got in (want, {k: v for k, v in want.items() if k != "white_potion"}))
+    got = potions.QuickslotReader(ASSETS, display_p3=True).read(display_p3(img), gh, (300, 500), now=0)
+    check(f"...even in Display P3 colours ({got})", not {k: v for k, v in got.items() if want.get(k) != v})
+
 # Where the quickslot is comes from the EXP number, to within a few pixels: the keys are lined up
 # with the quickslot itself, so a few pixels (or more) off still reads every key right.
 for name, shot_, anchor, want_ in (("player's quickslot", lemon, (404 - 600, 1085 - 870), {"orange_potion": 269, "lemon": 266}),

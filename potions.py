@@ -14,10 +14,15 @@ The quickslot is always in the same place next to the EXP number (at the UI's sc
 only its 8 keys are looked at. Every key is checked for a potion now and then; in between,
 only the keys where potions were found are read again.
 
+On a Mac, screenshots come in the display's own colours (Display P3 on most Macs), not the
+game's: bright colours come out a little paler (a Lemon's yellow most of all), so there each
+picture is also tried in Display P3's colours.
+
 PotionTracker turns the counts into potions used (the count went down) and picked up (it
 went up), each worth its price (potions.json: the NPC shop price, which Settings can change).
 """
 import json
+import sys
 import time
 from pathlib import Path
 
@@ -63,6 +68,22 @@ def _load_rgba(path):
     return a
 
 
+# sRGB to Display P3, in linear light (both use sRGB's curve)
+_SRGB_TO_P3 = np.array([[0.8225, 0.1774, 0.0000],
+                        [0.0332, 0.9669, 0.0000],
+                        [0.0171, 0.0724, 0.9108]])
+
+
+def _display_p3(a):
+    """The picture (BGRA) as a Mac's screenshot of a Display P3 screen shows it."""
+    v = a[..., 2::-1].astype(np.float64) / 255                         # (RGB)
+    v = np.where(v <= 0.04045, v / 12.92, ((v + 0.055) / 1.055) ** 2.4) @ _SRGB_TO_P3.T
+    v = np.where(v <= 0.0031308, v * 12.92, 1.055 * np.maximum(v, 0) ** (1 / 2.4) - 0.055)
+    out = a.copy()
+    out[..., :3] = np.clip(v[..., ::-1] * 255 + 0.5, 0, 255).astype(np.uint8)
+    return out
+
+
 def _resize(a, s):
     return cv2.resize(a, None, fx=s, fy=s, interpolation=cv2.INTER_AREA if s < 1 else cv2.INTER_LINEAR)
 
@@ -87,9 +108,11 @@ def _digit(a, s):
 class QuickslotReader:
     """Reads {potion key: count} from a picture of the area around the quickslot."""
 
-    def __init__(self, folder):
+    def __init__(self, folder, display_p3=sys.platform == "darwin"):
         self.catalog = load_catalog(folder)
         self.icons = {p["key"]: _load_rgba(Path(folder) / f"{p['key']}.png") for p in self.catalog}
+        # each picture as it may show on screen: as it is, and on a Mac in Display P3's colours too
+        self.looks = {k: [a] + ([_display_p3(a)] if display_p3 else []) for k, a in self.icons.items()}
         self.digits = [_load_rgba(Path(folder) / f"count_{d}.png") for d in range(10)]
         self._cache = {}            # scale -> prepared pictures
         self.forget()
@@ -114,7 +137,7 @@ class QuickslotReader:
         if s not in self._cache:
             if len(self._cache) > 40:
                 self._cache.clear()
-            self._cache[s] = {k: _body(a, s) for k, a in self.icons.items()}
+            self._cache[s] = {k: [_body(a, s) for a in looks] for k, looks in self.looks.items()}
         return self._cache[s]
 
     def _digits_at(self, s):
@@ -136,19 +159,19 @@ class QuickslotReader:
         it), or [] if none fits well enough, or two fit nearly as well."""
         fits, self.closest = [], []
         for key in (keys or self.icons):
-            best = None                               # this picture's best spot and size
+            best, look = None, 0                      # this picture's best spot, size and colours
             for s in scales:
-                tpl, mask, n = self._icons_at(s)[key]
-                r = self._rms(img, tpl, mask, n)
-                if r is None:
-                    continue
-                _, v, _, (x, y) = cv2.minMaxLoc(-r)
-                if best is None or -v < best[0]:
-                    best = (-v, key, x, y, tpl.shape[1], tpl.shape[0], s)
+                for i, (tpl, mask, n) in enumerate(self._icons_at(s)[key]):
+                    r = self._rms(img, tpl, mask, n)
+                    if r is None:
+                        continue
+                    _, v, _, (x, y) = cv2.minMaxLoc(-r)
+                    if best is None or -v < best[0]:
+                        best, look = (-v, key, x, y, tpl.shape[1], tpl.shape[0], s), i
             # (only pictures whose light and dark parts line up there too: a plain pale patch
             # is close to a White Potion's colour without looking like one)
             if best and best[0] <= ICON_MAX + ICON_LEAD:
-                shape = self._shape(img, *best[1:4], best[6])
+                shape = self._shape(img, *best[1:4], best[6], look)
                 self.closest.append((best[0], key, shape))
                 if shape >= SHAPE_MIN:
                     fits.append(best + (shape,))
@@ -167,11 +190,11 @@ class QuickslotReader:
             return []                                  # two potions fit nearly as well: unsure
         return [near[0][:7]]
 
-    def _shape(self, img, key, x, y, s):
+    def _shape(self, img, key, x, y, s, look=0):
         """Not just the right colours: how well the picture's light and dark parts line up with
         the potion's (-1 to 1; a plain white patch is as close to a White Potion's colour as
         it gets, but has no light and dark parts: 0)."""
-        tpl, mask, _ = self._icons_at(s)[key]
+        tpl, mask, _ = self._icons_at(s)[key][look]
         h, w = tpl.shape[:2]
         patch = img[y:y + h, x:x + w]
         m = mask[..., 0] > 0
