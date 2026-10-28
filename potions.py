@@ -31,14 +31,16 @@ SHAPE_MIN = 0.6             # how well its light and dark parts must line up (tr
 RIVAL_SHAPE = 0.85          # ...and for another picture to cast doubt on it (a White Potion "fits"
                             # most potions' colours a little, but lines up at only ~0.7)
 DIGIT_MIN = 0.68            # how well each digit of a count must match (true ones: ~0.75+, stray bits ~0.6)
+DIGIT_LEAD = 0.05           # ...and how far ahead of any other digit at that spot (a 6 and a 9 differ
+                            # little at a slightly wrong size): an unsure count isn't read at all
 SCALE_PER_GH = 1 / 8        # the UI's scale for an EXP digit height (1.35 at gh ~11)
-ICON_STEPS = (0.9, 0.93, 0.96, 0.99, 1.02)   # picture sizes tried, around the
+ICON_STEPS = (0.86, 0.9, 0.93, 0.96, 0.99, 1.02)   # picture sizes tried, around the
                             # digits' scale (Classic World's pictures are a little smaller than these)
 # The quickslot's keys, in units of the UI's scale, from where the EXP number starts
 # (measured on 1920x1080 and 2000x1267 screenshots: the same in both)
 SLOT_LEFT, SLOT_TOP = 199, -118
-SLOT_PITCH = (36.4, 35.6)
-SLOT_SIZE = 31
+SLOT_PITCH = (35.5, 35)      # (measured on a lossless screenshot at the game's own size)
+SLOT_SIZE = 30
 SLOT_SLACK = 12             # how far from there a key's picture may be (the scale is a guess)
 GRID_MIN = 0.4             # how clearly the quickslot's keys must show to line up with them (~0.6)
 SEARCH_SECONDS = 30         # how often every key is checked for a (new) potion
@@ -235,25 +237,33 @@ class QuickslotReader:
                     out.append(pick)
             return out
 
+        def lead(v, d, i, r):
+            """How far this digit is ahead of the best other digit at about the same spot."""
+            others = [float(m[r, max(0, i - 1):i + 2].max()) for e, m in enumerate(maps)
+                      if e != d and m[r, max(0, i - 1):i + 2].size]
+            return v - max(others, default=-1.0)
+
         best = None
 
-        def follow(text, fit, at, row):
+        def follow(text, fit, at, row, sure):
             nonlocal best
             nxt = steps(at, row, False) if len(text) < 5 else []
             for v, d, i, r in nxt:
-                follow(text + str(d), fit + v, i + width[d], r)
+                follow(text + str(d), fit + v, i + width[d], r, min(sure, lead(v, d, i, r)))
             if nxt or len(text) > 4 or (text.startswith("0") and text != "0"):
                 return                                # (a count ends where no digit follows)
             if at > area.shape[1] - 0.3 * dw:
                 return                                # it may go on past where it's looked at
             if best is None or fit > best[1]:
-                best = (int(text), fit)
+                best = (int(text), fit, sure)
 
         for row in range(rows):
             for start in range(0, min(int(1.4 * dw), maps[0].shape[1])):
                 for v, d, i, r in steps(start, row, True):
-                    follow(str(d), v, i + width[d], r)
-        return None if best is None else (best[0], best[1] / len(str(best[0])))
+                    follow(str(d), v, i + width[d], r, lead(v, d, i, r))
+        if best is None or best[2] < DIGIT_LEAD:
+            return None                               # (nothing, or a digit that could be another)
+        return best[0], best[1] / len(str(best[0]))
 
     @staticmethod
     def _grid(s):

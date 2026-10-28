@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.20-beta
+
+**Fixed**
+- **Meat wasn't recognised** on the quickslot, and a **count could be misread** (a Lemon's 446 as 449). Meat and Lemon now use Classic World's own pictures (the older ones look different), and the quickslot's keys are measured more exactly. A count is only read when every digit is clearly that digit and no other; if one isn't (a 6 that could be a 9), that look is skipped and the next one, a few seconds later, reads it.
+
 ## 0.9.19-beta
 
 **New**
