@@ -67,7 +67,7 @@ PLATFORM = create_platform()
 PLATFORM.setup_process()
 cv2.setNumThreads(1)
 
-VERSION = "0.9.20-beta"
+VERSION = "0.9.21-beta"
 WINDOW_TITLE = "Maple Classic Exp Overlay"    # the version is shown at the bottom, and in Settings
 OLD_TITLES = ("Maple EXP/hr",)               # what versions before 0.9.3 were called
 
@@ -3641,8 +3641,9 @@ class App:
         fields, w.icons = {}, []
         for i, p in enumerate(self.reader.quickslot.catalog):
             row, col = 1 + i // 2, (i % 2) * 2
-            try:                                     # the potion's picture, as the game shows it
-                icon = Image.open(ASSETS / "potions" / f"{p['key']}.png").convert("RGBA")
+            icon = self._potion_icon(p["key"])       # the potion's picture
+            try:
+                icon = icon.copy()
                 size = px(24)
                 icon.thumbnail((size, size), Image.LANCZOS)
                 w.icons.append(ImageTk.PhotoImage(icon))
@@ -4172,13 +4173,18 @@ class App:
         return {p["key"]: own.get(p["key"], p["price"]) for p in self.reader.quickslot.catalog}
 
     def _potion_icon(self, key):
-        """The potion's picture (a PIL image), loaded once."""
+        """The potion's picture to show (a PIL image), loaded once: assets/potions/display/ has a
+        whole one where the picture it's recognised by is a cut-out (parts of a key's name and
+        count left out), so the tiles and Settings never show a cut-off picture."""
         icons = self.__dict__.setdefault("_potion_icons", {})
         if key not in icons:
-            try:
-                icons[key] = Image.open(ASSETS / "potions" / f"{key}.png").convert("RGBA")
-            except Exception:
-                icons[key] = None
+            icons[key] = None
+            for path in (ASSETS / "potions" / "display" / f"{key}.png", ASSETS / "potions" / f"{key}.png"):
+                try:
+                    icons[key] = Image.open(path).convert("RGBA")
+                    break
+                except Exception:
+                    continue
         return icons[key]
 
     def _potion_tiles(self):

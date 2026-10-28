@@ -605,12 +605,15 @@ check(f"two HP potions: both named, the one used most first, each one's count, a
       shown == {"_title": "RED + WHITE", "_v": "62 \u00b7 200 left", "_sub": "20/hr \u00b7 -1,000/hr"}
       and hp._more_photo is not None and hp.itemcget(hp._more, "state") == "normal")
 hero = app.view.hero
-hero.show(eta="Lv 51 in 1 h 37 min")
-root.update()
+hero.show(eta="Lv 51 in 1 h 37 min")       # (read right away: the window's own refresh shows its real line)
 parts = [hero.itemcget(i, "text") for i in (hero._eta, hero._eta_in, hero._eta_time)]
 check(f"the level and the time to it are set apart, the time in white ({parts})",
       parts == ["Lv 51", "in", "1 h 37 min"] and hero.itemcget(hero._eta_time, "fill") == __import__("ui_gfx").TEXT
       and hero.bbox(hero._eta)[2] < hero.bbox(hero._eta_time)[0])
+shown_meat = app._potion_icon("meat")
+cutout = m.Image.open(m.ASSETS / "potions" / "meat.png")
+check("a potion recognised by a cut-out picture is shown whole (assets/potions/display/)",
+      shown_meat is not None and shown_meat.size != cutout.size)
 app.set_compact(True); root.update()
 check("compact mode hides the potion tiles", not app.view.potions_row.winfo_ismapped())
 app.set_compact(False); root.update()

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.21-beta
+
+**Fixed**
+- **The Meat and Lemon pictures on the potion tiles (and in Potion prices) were cut off.** The pictures the overlay recognises them by leave out the parts under a key's name and count; the tiles now show a whole picture instead.
+
 ## 0.9.20-beta
 
 **Fixed**
