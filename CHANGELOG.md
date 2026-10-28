@@ -4,6 +4,7 @@
 
 **Fixed**
 - **Potions weren't read with the overlay docked right next to the quickslot** ("This window is covering the quickslot's potions"). The overlay now only skips them when it covers the quickslot's keys themselves.
+- **The ⋯ menu didn't open on a Mac** (View capture, PQ mode, Select area). It closed again as soon as it opened; now it stays open until you choose something or click elsewhere in the overlay.
 
 ## 0.9.22-beta
 
