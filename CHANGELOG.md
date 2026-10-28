@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+**Fixed**
+- **A Lemon on the quickslot wasn't recognised on a Mac** ("Not on quickslot"). A Mac's screenshots come in the display's own colours (Display P3), where a Lemon's bright yellow is paler than the picture the overlay knows it by. On a Mac, each potion's picture is now also tried in Display P3's colours.
+
 ## 0.9.21-beta
 
 **Fixed**
