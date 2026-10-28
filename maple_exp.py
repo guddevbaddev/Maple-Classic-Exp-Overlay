@@ -67,7 +67,7 @@ PLATFORM = create_platform()
 PLATFORM.setup_process()
 cv2.setNumThreads(1)
 
-VERSION = "0.9.23-beta"
+VERSION = "0.9.24-beta"
 WINDOW_TITLE = "Maple Classic Exp Overlay"    # the version is shown at the bottom, and in Settings
 OLD_TITLES = ("Maple EXP/hr",)               # what versions before 0.9.3 were called
 
@@ -2921,6 +2921,7 @@ class App:
         root.resizable(False, False)
         root.protocol("WM_DELETE_WINDOW", self.close)
         root.createcommand("tk::mac::Quit", self.close)      # Cmd+Q on a Mac: close properly too
+        root.createcommand("tk::mac::ReopenApplication", self._bring_back)      # its Dock icon clicked
         self._apply_window_settings()
         self._restore_position()
 
@@ -3455,6 +3456,22 @@ class App:
     def _apply_window_settings(self):
         self.root.attributes("-topmost", bool(self.cfg["topmost"]))
         self.root.attributes("-alpha", 1 - min(MAX_TRANSPARENCY, max(0, int(self.cfg["transparency"]))) / 100)
+        # (on a Mac, an always-on-top window goes on every desktop, or Mission Control can lose it;
+        # again a moment later, as its window may not be made yet)
+        for delay in (0, 300):
+            self.root.after(delay, lambda: PLATFORM.on_every_desktop(self.root, bool(self.cfg["topmost"])))
+
+    def _bring_back(self):
+        """Clicking the overlay's Dock icon (Mac): back in front, and on the screen if it was off it."""
+        self.root.deiconify()
+        self.root.lift()
+        self._apply_window_settings()
+        x, y = self.root.winfo_rootx(), self.root.winfo_rooty()
+        with mss.mss() as sct:
+            screens = sct.monitors[1:]
+        if screens and not any(v["left"] <= x < v["left"] + v["width"] - 50
+                               and v["top"] <= y < v["top"] + v["height"] - 50 for v in screens):
+            self.root.geometry(f"+{screens[0]['left'] + 100}+{screens[0]['top'] + 100}")
 
     def _switch(self, parent, text, var):
         """An on/off switch tied to a BooleanVar."""

@@ -166,6 +166,11 @@ class Platform(ABC):
         """Makes the font files available to this program only (not installed). True if all worked."""
         return False
 
+    def on_every_desktop(self, root, on):
+        """Shows the window on every desktop (macOS Spaces), so it isn't left behind on one; or
+        back to just one. True if it was done."""
+        return False
+
     def style_window(self, root, background, text):
         """Makes the window's frame match the overlay's colours where the OS allows it
         (the title bar), given as '#rrggbb'. Does nothing where it can't."""
