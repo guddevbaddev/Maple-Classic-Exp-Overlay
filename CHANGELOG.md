@@ -4,6 +4,7 @@
 
 **Fixed**
 - **Potions weren't read with the overlay docked right next to the quickslot** ("This window is covering the quickslot's potions"). The overlay now only skips them when it covers the quickslot's keys themselves.
+- **Mesos weren't read on a Mac** ("open inventory" with the inventory open). A Mac scales the game's picture, so the mesos box can measure a pixel taller than the spacing of its digits, and by the 7th digit (the 1 of 1,432,448) the digit was missed and the whole number left out. The digits' spacing is now also tried a little tighter; every spacing that reads clearly must read the same number.
 - **The ⋯ menu didn't open on a Mac** (View capture, PQ mode, Select area). It closed again as soon as it opened; now it stays open until you choose something or click elsewhere in the overlay.
 
 ## 0.9.22-beta

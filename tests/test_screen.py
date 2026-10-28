@@ -88,6 +88,16 @@ for name, info in sorted(PARTS["inventory"].items()):
     ok, total = counts["found see-through"]
     print(f"     (mesos box found by its outline, {size}: {ok}/{total})")
 
+# ---- a Mac (a player's screenshot, EXP digits 10 px): the scaled picture makes the box measure a
+# little taller than its digits' spacing, so the leading 1 of 1,432,448 fell between two spots
+mac = cv2.imread(str(FRAMES / "mesos_mac.png"))
+for s in (1.0, 0.99, 1.016, 1.03):
+    img = cv2.resize(mac, None, fx=s, fy=s, interpolation=cv2.INTER_AREA if s < 1 else cv2.INTER_LINEAR)
+    fields = m.find_mesos_fields(img, 10.0 * s)
+    got = m.read_mesos_positions(img, fields[0], templates) if len(fields) == 1 else None
+    check(f"a Mac's mesos box is found and read, at {s:.0%} ({fields}: {got and got[0]})",
+          got is not None and got[0] == 1432448)
+
 # ---- storage and trade windows show a second mesos box: never read the wrong one
 class FakeScreen:
     """Stands in for mss: one monitor showing `image` (the game), grab() cuts out of it."""

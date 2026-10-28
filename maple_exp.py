@@ -943,12 +943,18 @@ def mesos_layout(bgr, field):
 # The game right-aligns the number: digit centres sit at these distances from the box's right
 # edge, in box heights: first digit, each further digit, and extra room for every comma.
 MESOS_FIRST, MESOS_PITCH, MESOS_COMMA = 0.36, 0.447, 0.30
+# A scaled game window (a Mac's) blurs the box's edges a little outwards, so it can measure up
+# to a pixel taller than its digits' spacing: by the 7th digit that's a few pixels off. So the
+# spacing is also tried as if the box were this much shorter. (Not taller: that can lose the
+# first digit, a '1' read as the empty spot just left of the number.)
+MESOS_HEIGHT_SLACK = (0.0, -0.5, -1.0)
+MESOS_SLACK_MAX = 0.055     # ...but no more than this much of its height (a small box's pixel is a lot)
 
 
-def _mesos_spot(field, i):
+def _mesos_spot(field, i, spacing=1.0):
     """x of the i-th digit from the right in the mesos box (i = -1: just right of them)."""
     x, y, w, h = field
-    return x + w - (MESOS_FIRST + i * MESOS_PITCH + (max(i, 0) // 3) * MESOS_COMMA) * h
+    return x + w - (MESOS_FIRST + i * MESOS_PITCH + (max(i, 0) // 3) * MESOS_COMMA) * h * spacing
 
 
 def _mesos_strokes(bgr, field):
@@ -982,12 +988,24 @@ def read_mesos_positions(bgr, field, templates, digit_count=None):
     number from the middle. If digit_count is given, the number must have exactly that many digits (which
     also catches a lost first digit). Returns (number, Layout, weakest score, weakest lead),
     or None.
+
+    The digits' spacing is tried as the box's height says and as if it were up to a pixel
+    shorter (MESOS_HEIGHT_SLACK): every spacing that reads clearly must read the same number.
     """
+    lay, h = _mesos_strokes(bgr, field), field[3]
+    reads = [r for r in (_mesos_at_spacing(lay, field, templates, digit_count, (h + d) / h)
+                         for d in MESOS_HEIGHT_SLACK if -d <= MESOS_SLACK_MAX * h) if r]
+    if not reads or len({r[0] for r in reads}) > 1:
+        return None
+    return max(reads, key=lambda r: r[2])               # (the one whose weakest digit is clearest)
+
+
+def _mesos_at_spacing(lay, field, templates, digit_count, spacing):
+    """read_mesos_positions with the digits this far apart (1.0: as the box's height says)."""
     x, y, w, h = field
-    lay = _mesos_strokes(bgr, field)
     digits, cells, scores, leads, ended = "", [], [], [], 0
     for i in range(16):
-        cx = _mesos_spot(field, i)
+        cx = _mesos_spot(field, i, spacing)
         if cx - 0.3 * h < x:
             break
         digit, score, lead = templates.match(lay, (cx, 0.4 * h, "digit"))
