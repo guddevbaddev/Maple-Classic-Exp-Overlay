@@ -67,7 +67,7 @@ PLATFORM = create_platform()
 PLATFORM.setup_process()
 cv2.setNumThreads(1)
 
-VERSION = "0.9.21-beta"
+VERSION = "0.9.22-beta"
 WINDOW_TITLE = "Maple Classic Exp Overlay"    # the version is shown at the bottom, and in Settings
 OLD_TITLES = ("Maple EXP/hr",)               # what versions before 0.9.3 were called
 
