@@ -2,6 +2,7 @@
 
 MainView takes the numbers through show(...) and only touches what changed, so while nothing changes
 it draws nothing. It knows nothing about screens, logs or the game: the App gives it callbacks."""
+import sys
 import tkinter as tk
 from tkinter import font as tkfont
 
@@ -687,7 +688,12 @@ class MainView(tk.Frame):
 
 
 class PopupMenu(tk.Toplevel):
-    """The 'more' menu: a short list of actions in a rounded panel, closed by choosing one, clicking away or Esc."""
+    """The 'more' menu: a short list of actions in a rounded panel, closed by choosing one, clicking away or Esc.
+
+    On a Mac a window without a frame doesn't keep the keyboard focus (it's lost as soon as it's
+    given), so there it isn't closed when it loses it: a click anywhere in the overlay closes it."""
+
+    _open = None                # the menu that's open on a Mac, for the overlay's one click binding
 
     def __init__(self, theme, anchor, items):
         super().__init__(anchor)
@@ -711,7 +717,26 @@ class PopupMenu(tk.Toplevel):
         self.geometry(f"+{max(0, x)}+{max(0, y)}")
         self.focus_force()
         self.bind("<Escape>", lambda e: self.destroy())
-        self.bind("<FocusOut>", lambda e: self.after(120, self._maybe_close))
+        if sys.platform != "darwin":
+            self.bind("<FocusOut>", lambda e: self.after(120, self._maybe_close))
+            return
+        if PopupMenu._open is not None:
+            PopupMenu._close_open()
+        PopupMenu._open = self
+        root = anchor.winfo_toplevel()
+        if not getattr(root, "_popup_click", False):     # (bound once: Tkinter can't unbind just one)
+            root._popup_click = True
+            root.bind("<ButtonPress-1>", lambda e: PopupMenu._close_open(), add="+")
+            root.bind("<Escape>", lambda e: PopupMenu._close_open(), add="+")
+
+    @staticmethod
+    def _close_open():
+        menu, PopupMenu._open = PopupMenu._open, None
+        try:
+            if menu is not None and menu.winfo_exists():
+                menu.destroy()
+        except Exception:
+            pass
 
     def _maybe_close(self):
         try:

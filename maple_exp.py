@@ -67,7 +67,7 @@ PLATFORM = create_platform()
 PLATFORM.setup_process()
 cv2.setNumThreads(1)
 
-VERSION = "0.9.22-beta"
+VERSION = "0.9.23-beta"
 WINDOW_TITLE = "Maple Classic Exp Overlay"    # the version is shown at the bottom, and in Settings
 OLD_TITLES = ("Maple EXP/hr",)               # what versions before 0.9.3 were called
 
@@ -943,12 +943,18 @@ def mesos_layout(bgr, field):
 # The game right-aligns the number: digit centres sit at these distances from the box's right
 # edge, in box heights: first digit, each further digit, and extra room for every comma.
 MESOS_FIRST, MESOS_PITCH, MESOS_COMMA = 0.36, 0.447, 0.30
+# A scaled game window (a Mac's) blurs the box's edges a little outwards, so it can measure up
+# to a pixel taller than its digits' spacing: by the 7th digit that's a few pixels off. So the
+# spacing is also tried as if the box were this much shorter. (Not taller: that can lose the
+# first digit, a '1' read as the empty spot just left of the number.)
+MESOS_HEIGHT_SLACK = (0.0, -0.5, -1.0)
+MESOS_SLACK_MAX = 0.055     # ...but no more than this much of its height (a small box's pixel is a lot)
 
 
-def _mesos_spot(field, i):
+def _mesos_spot(field, i, spacing=1.0):
     """x of the i-th digit from the right in the mesos box (i = -1: just right of them)."""
     x, y, w, h = field
-    return x + w - (MESOS_FIRST + i * MESOS_PITCH + (max(i, 0) // 3) * MESOS_COMMA) * h
+    return x + w - (MESOS_FIRST + i * MESOS_PITCH + (max(i, 0) // 3) * MESOS_COMMA) * h * spacing
 
 
 def _mesos_strokes(bgr, field):
@@ -982,12 +988,24 @@ def read_mesos_positions(bgr, field, templates, digit_count=None):
     number from the middle. If digit_count is given, the number must have exactly that many digits (which
     also catches a lost first digit). Returns (number, Layout, weakest score, weakest lead),
     or None.
+
+    The digits' spacing is tried as the box's height says and as if it were up to a pixel
+    shorter (MESOS_HEIGHT_SLACK): every spacing that reads clearly must read the same number.
     """
+    lay, h = _mesos_strokes(bgr, field), field[3]
+    reads = [r for r in (_mesos_at_spacing(lay, field, templates, digit_count, (h + d) / h)
+                         for d in MESOS_HEIGHT_SLACK if -d <= MESOS_SLACK_MAX * h) if r]
+    if not reads or len({r[0] for r in reads}) > 1:
+        return None
+    return max(reads, key=lambda r: r[2])               # (the one whose weakest digit is clearest)
+
+
+def _mesos_at_spacing(lay, field, templates, digit_count, spacing):
+    """read_mesos_positions with the digits this far apart (1.0: as the box's height says)."""
     x, y, w, h = field
-    lay = _mesos_strokes(bgr, field)
     digits, cells, scores, leads, ended = "", [], [], [], 0
     for i in range(16):
-        cx = _mesos_spot(field, i)
+        cx = _mesos_spot(field, i, spacing)
         if cx - 0.3 * h < x:
             break
         digit, score, lead = templates.match(lay, (cx, 0.4 * h, "digit"))
@@ -1571,14 +1589,24 @@ class ScreenReader:
         x0, y0, x1, y1 = max(0, x0), max(0, y0), min(ww, x1), min(wh, y1)
         if x1 - x0 < 4 * g or y1 - y0 < 2 * g:
             return None
-        if self._covered(wx + x0, wy + y0, x1 - x0, y1 - y0):
+        # (the area has room around the keys to line them up: this window may sit in that room,
+        # docked next to the quickslot, as long as it leaves the keys themselves clear)
+        keys = q.slot_boxes((ax, ay), g * QS_SCALE_PER_GH)
+        kx0, ky0 = min(b[0] for b in keys), min(b[1] for b in keys)
+        kx1, ky1 = max(b[0] + b[2] for b in keys), max(b[1] + b[3] for b in keys)
+        if self._covered(wx + kx0, wy + ky0, kx1 - kx0, ky1 - ky0):
             notes.append("This window is covering the quickslot's potions.")
             return None
-        shot = grab(sct, wx + x0, wy + y0, x1 - x0, y1 - y0)
+        shot = self._hide_own(grab(sct, wx + x0, wy + y0, x1 - x0, y1 - y0))
         if not shot:
             return None
         img, sx, sy = shot                                # (clipped to the screens)
         counts = q.read(img, g, (wx + ax - sx, wy + ay - sy))
+        # a key this window covers part of (the UI's size was only a guess) isn't read: its count
+        # could be cut short
+        for key, *_, (bx, by, bw, bh) in q.slots.values():
+            if self._covered(sx + bx - bw // 3, sy + by, bw + bw // 3, bh):
+                counts.pop(key, None)
         self.potions_look = {"image": img}
         return counts
 
