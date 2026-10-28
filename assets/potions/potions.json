@@ -1,5 +1,5 @@
 {
- "source": "Prices, HP and MP: meowdb.com/msclassic/npc-shops/item-efficiency/consumables (NPC shop prices; 0 = not sold in shops). Pictures and count digits: the game's item icons and item-count font (UI/Basic.img/ItemNo), via maplestory.io. kind: the quickslot tile it shows on (hp: red, mp: blue; potions that heal both go with hp). Meat and Lemon: Classic World's own pictures, cut from a player's quickslot at the game's own size (the older ones look different); the parts under a key's name and count are left out.",
+ "source": "Prices, HP and MP: meowdb.com/msclassic/npc-shops/item-efficiency/consumables (NPC shop prices; 0 = not sold in shops). Pictures and count digits: the game's item icons and item-count font (UI/Basic.img/ItemNo), via maplestory.io. kind: the quickslot tile it shows on (hp: red, mp: blue; potions that heal both go with hp). Meat and Lemon: Classic World's own pictures, cut from a player's quickslot at the game's own size (the older ones look different); the parts under a key's name and count are left out. display/: whole pictures to show for those (the older version's), as the cut-outs are only for recognising them.",
  "potions": [
   {
    "key": "red_potion",
