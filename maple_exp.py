@@ -67,7 +67,7 @@ PLATFORM = create_platform()
 PLATFORM.setup_process()
 cv2.setNumThreads(1)
 
-VERSION = "0.9.26-beta"
+VERSION = "0.9.27-beta"
 WINDOW_TITLE = "Maple Classic Exp Overlay"    # the version is shown at the bottom, and in Settings
 OLD_TITLES = ("Maple EXP/hr",)               # what versions before 0.9.3 were called
 
@@ -97,6 +97,7 @@ PQ_GAP = 600                # PQ mode: seconds without EXP before it pauses (sta
 PQ_MAP = "Party Quest"      # PQ mode: the log line a whole party quest goes on, whatever its maps
 SCREEN_GAP = 10             # seconds without seeing the EXP bar before it pauses by itself
 LOW_POTIONS_MAX = 500       # Settings: the most "Warn at ... left" goes up to
+FOUND_MAX = 100_000         # the most found potions of one kind it keeps count of
 MESOS_PATH = DATA_DIR / "mesos_digits.npz"             # learned as you play...
 MESOS_START_PATH = ASSETS / "mesos_digits.npz"          # ...starting from these
 MESOS_BOX_PATH = ASSETS / "mesos_box.npz"
@@ -242,6 +243,9 @@ def load_config():
     prices = cfg.get("potion_prices")
     cfg["potion_prices"] = {k: v for k, v in prices.items() if isinstance(k, str) and type(v) is int
                             and 0 <= v <= 10_000_000} if isinstance(prices, dict) else {}
+    found = cfg.get("found_potions")                 # found potions not used yet, from session to session
+    cfg["found_potions"] = {k: min(v, FOUND_MAX) for k, v in found.items() if isinstance(k, str)
+                            and type(v) is int and v > 0} if isinstance(found, dict) else {}
     cfg["transparency"] = min(MAX_TRANSPARENCY, max(0, cfg["transparency"]))
     if cfg["ui_scale"] not in UI_SCALES:
         cfg["ui_scale"] = 100
@@ -2869,6 +2873,7 @@ class App:
         self.session = Session(self.cfg["gap_seconds"])
         self.session.auto_pause = self.cfg["auto_pause"]
         self.tracker, self.meso, self.potions = self.session.exp, self.session.meso, self.session.potions
+        self.potions.found = self.cfg["found_potions"]      # (the same dict: saved as it changes)
         self.low_counts = {}                # the quickslot's counts the low-potion sound last looked at
         self.potion_note = None             # (what the last low-potion warning said, when)
         self.party = 1
@@ -2966,7 +2971,8 @@ class App:
         self.theme = Theme(self.root, self._px_per_pt * 0.75, ASSETS / "fonts", self._own_fonts, PLATFORM.font)
         callbacks = dict(settings=self.open_settings, compact=lambda: self.set_compact(not self.compact),
                          log=self.toggle_log, start=self.toggle, reset=self.reset, logging=self._logging_clicked,
-                         menu=self._open_menu, share=self.share_card, details=self._details_changed)
+                         menu=self._open_menu, share=self.share_card, details=self._details_changed,
+                         potions=self.open_found_potions)
         self.view = self.main = MainView(self.root, self.theme, callbacks, details=bool(self.cfg.get("details")),
                                          version=f"v{VERSION}")
         self.view.grid(row=0, column=0, sticky="n")
@@ -3728,6 +3734,90 @@ class App:
                command=shop_prices, bg=BG).pack(side="left")
         return w
 
+    def _drop_used_up(self):
+        """Found potions all used up: off the list (so the saved settings stay short)."""
+        found = self.cfg["found_potions"]
+        for key in [k for k, n in found.items() if n <= 0]:
+            del found[key]
+
+    def open_found_potions(self, kind="hp", anchor=None):
+        """Clicking the HP (or MP) potion tile: the found potions of that kind, which cost nothing
+        when used (they're used before bought ones). Potions picked up while tracking are added by
+        themselves; here they can be set by hand too (found while the overlay wasn't running, or
+        moved to storage)."""
+        th = self.theme
+        px = th.px
+        old = getattr(self, "found_win", None)
+        if old is not None and old.winfo_exists():
+            old.destroy()
+        w = self.found_win = tk.Toplevel(self.root)
+        w.title(f"Found {kind.upper()} potions")
+        w.configure(bg=BG)
+        w.resizable(False, False)
+        w.transient(self.root)
+        w.attributes("-topmost", bool(self.cfg["topmost"]))
+        body = tk.Frame(w, bg=BG)
+        body.pack(padx=px(22), pady=px(18))
+        tk.Label(body, text=f"Found {kind.upper()} potions", bg=BG, fg=FG, font=th.font("bold", 14)).grid(
+            row=0, column=0, columnspan=3, sticky="w")
+        tk.Label(body, text="Potions you found (not bought) cost nothing when you use them: they're used "
+                 "first. Ones picked up while tracking are added by themselves; set any you found another "
+                 "time here.", wraplength=px(330), justify="left", bg=BG, fg=DIM,
+                 font=th.font("regular", 11)).grid(row=1, column=0, columnspan=3, sticky="w", pady=(px(4), px(10)))
+        found, prices = self.cfg["found_potions"], self.potion_prices()
+        catalog = [p for p in self.reader.quickslot.catalog if p.get("kind", "hp") == kind]
+        on_keys = self.potions.counts
+        catalog.sort(key=lambda p: (p["key"] not in on_keys, -found.get(p["key"], 0)))   # (yours first)
+        fields, w.icons = {}, []
+        for i, p in enumerate(catalog, 2):
+            icon = self._potion_icon(p["key"])
+            try:
+                icon = icon.copy()
+                icon.thumbnail((px(24), px(24)), Image.LANCZOS)
+                w.icons.append(ImageTk.PhotoImage(icon))
+                image = dict(image=w.icons[-1], compound="left")
+            except Exception:
+                image = {}
+            left = f"  ({fmt_num(on_keys[p['key']])} on your keys)" if p["key"] in on_keys else ""
+            tk.Label(body, text=" " + p["name"] + left, bg=BG, fg=FG, font=th.font("regular", 11), anchor="w",
+                     **image).grid(row=i, column=0, sticky="w", padx=(0, px(10)), pady=px(2))
+            tk.Label(body, text=f"{fmt_num(prices[p['key']])} each", bg=BG, fg=DIM,
+                     font=th.font("regular", 10)).grid(row=i, column=1, sticky="e", padx=(0, px(10)))
+            var = tk.StringVar(value=str(found.get(p["key"], 0)))
+            tk.Entry(body, textvariable=var, width=7, bg=FIELD, fg=FG, insertbackground=FG, relief="flat",
+                     highlightthickness=0, font=th.font("regular", 11), justify="right").grid(
+                row=i, column=2, pady=px(2), ipady=px(2))
+            fields[p["key"]] = var
+
+        def save():
+            for key, var in fields.items():
+                try:
+                    n = int(var.get().replace(",", "").strip() or 0)
+                except ValueError:
+                    continue
+                if 0 <= n <= FOUND_MAX:
+                    found[key] = n
+            self._drop_used_up()
+            save_config(self.cfg)
+            log_activity("Found potions set: " + (", ".join(
+                f"{self.potion_name(k)} {n}" for k, n in sorted(found.items())) or "none"))
+            w.destroy()
+
+        def none_found():
+            for var in fields.values():
+                var.set("0")
+        buttons = tk.Frame(body, bg=BG)
+        buttons.grid(row=99, column=0, columnspan=3, sticky="we", pady=(px(14), 0))
+        Button(buttons, th, text="Save", kind="primary", width=96, height=36, radius=11, size=12,
+               command=save, bg=BG).pack(side="right")
+        Button(buttons, th, text="None found", kind="secondary", width=116, height=36, radius=11, size=12,
+               command=none_found, bg=BG).pack(side="left")
+        w.bind("<Escape>", lambda e: w.destroy())
+        if anchor is not None:                         # (next to the tile that was clicked)
+            w.update_idletasks()
+            w.geometry(f"+{max(0, anchor.winfo_rootx())}+{max(0, anchor.winfo_rooty() - w.winfo_reqheight() - px(8))}")
+        return w
+
     def _reopen_settings(self):
         """After a size change: Settings again, in the same place, drawn for the new size."""
         old = self.settings_win
@@ -4074,6 +4164,10 @@ class App:
         if r.potions is not None:
             had = self.potions.seen
             self.session.potions_seen(r.potions)
+            if self.potions.changed:                     # found potions: kept for next time
+                self.potions.changed = False
+                self._drop_used_up()
+                save_config(self.cfg)
             if not had and self.potions.seen:
                 log_activity("Potions read on the quickslot: " + ", ".join(
                     f"{self.potion_name(k)} {n}" for k, n in sorted(self.potions.counts.items())))
@@ -4251,7 +4345,7 @@ class App:
             used = sum(p.used.get(k, 0) for k in keys)
             if used and el >= 60:
                 per_hour = used / el * 3600
-                cost = sum(p.used.get(k, 0) * prices.get(k, 0) for k in keys) / el * 3600
+                cost = sum(p.bought(k) * prices.get(k, 0) for k in keys) / el * 3600    # (found ones are free)
                 money = fmt_num(cost) if cost < 10_000 else fmt_short(cost)
                 sub = f"{fmt_num(per_hour)}/hr \u00b7 -{money}/hr" if cost else f"{fmt_num(per_hour)}/hr"
             else:
@@ -4269,7 +4363,7 @@ class App:
         return next((p["name"] for p in self.reader.quickslot.catalog if p["key"] == key), key)
 
     def _potions_text(self):
-        """Potions used and picked up this session, in mesos: "-1,250 / +300"."""
+        """Potions used this session, and how much of that found ones covered, in mesos: "-1,250 / +300"."""
         p = self.potions
         if not p.seen:
             return "\u2014"
@@ -4277,7 +4371,7 @@ class App:
         return f"-{fmt_num(p.cost(prices))} / +{fmt_num(p.covered(prices))}"
 
     def _profit_rate(self, el):
-        """Mesos per hour, less what potions cost (the ones picked up cover some of it)."""
+        """Mesos per hour, less what the bought potions used cost (found ones are free)."""
         m, p = self.meso, self.potions
         if el < 30 or (m.value is None and not p.seen):
             return None
@@ -4739,6 +4833,7 @@ class App:
             "mesos": fmt_num(self.meso.value) if self.meso.value is not None else None, "tracking": bool(self.session.on),
             "tracker": f"paused: {self.session.waiting or 'no'}, gained {fmt_num(t.gained)} EXP in {fmt_dur(t.elapsed())}",
             "potions": {"counts": self.potions.counts, "used": self.potions.used, "picked up": self.potions.picked,
+                        "found ones used": self.potions.free, "found, not used yet": self.potions.found,
                         "found": [(k, n) for k, _, n in self.reader.quickslot.found],
                         "digit scale": self.reader.quickslot.digit_scale},
             "settings": {"mode": self.reader.mode, **{k: self.cfg.get(k) for k in ("gap_seconds", "transparency", "topmost", "ui_scale",

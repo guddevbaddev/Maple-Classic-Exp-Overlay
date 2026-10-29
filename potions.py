@@ -433,17 +433,23 @@ class PotionTracker:
     of more than 20, or a different number of digits), so a misread never shows up as potions
     used. A change of more than 100 at once is a trip to storage, or potions moved around:
     it starts counting afresh from the new number. Changes while paused aren't counted.
+
+    Potions picked up go in `found` (kept from one session to the next, and set by hand too),
+    and one used is taken from there first: a found one costs nothing, only a bought one does.
     """
     REBASE = 100
 
-    def __init__(self):
+    def __init__(self, found=None):
+        self.found = found if found is not None else {}     # key -> found potions not used yet
+        self.changed = False        # `found` changed (to be saved)
         self.reset()
 
     def reset(self):
         self.counts = {}            # key -> confirmed count
         self._candidate = {}        # key -> (count, readings in a row)
         self.used = {}              # key -> potions used
-        self.picked = {}            # key -> potions picked up (or bought)
+        self.free = {}              # key -> ...of which found ones
+        self.picked = {}            # key -> potions picked up
 
     def observe(self, counts, counting):
         """counts: {key: count} as read; counting: tracking is on."""
@@ -462,8 +468,20 @@ class PotionTracker:
             self.counts[key] = n
             if old is None or not counting or abs(n - old) > self.REBASE:
                 continue
-            into = self.used if n < old else self.picked
-            into[key] = into.get(key, 0) + abs(n - old)
+            if n > old:
+                self.picked[key] = self.picked.get(key, 0) + n - old
+                self.found[key] = self.found.get(key, 0) + n - old
+            else:
+                free = min(self.found.get(key, 0), old - n)
+                self.used[key] = self.used.get(key, 0) + old - n
+                if free:
+                    self.free[key] = self.free.get(key, 0) + free
+                    self.found[key] -= free
+            self.changed = True
+
+    def bought(self, key):
+        """Potions of this kind used that weren't found ones."""
+        return self.used.get(key, 0) - self.free.get(key, 0)
 
     @staticmethod
     def _worth(amounts, prices):
@@ -474,11 +492,11 @@ class PotionTracker:
         return self._worth(self.used, prices)
 
     def covered(self, prices):
-        """Mesos worth of the potions picked up."""
-        return self._worth(self.picked, prices)
+        """Mesos worth of the found potions among them (free)."""
+        return self._worth(self.free, prices)
 
     def net(self, prices):
-        """What potions cost on balance: used, less what the ones picked up are worth."""
+        """What potions cost: the bought ones used (found ones are free)."""
         return self.cost(prices) - self.covered(prices)
 
     @property

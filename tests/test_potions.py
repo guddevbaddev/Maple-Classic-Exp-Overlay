@@ -201,13 +201,15 @@ t.observe({"red_potion": 75}, True)
 check("a one-off misread isn't counted", t.used == {"red_potion": 5} and t.counts["red_potion"] == 75)
 for n in (77, 77):
     t.observe({"red_potion": n}, True)
-check(f"potions picked up cover some of the cost (net {t.net(prices)})",
-      t.picked == {"red_potion": 2} and t.net(prices) == 150)
+check(f"potions picked up are kept as found ones, free to use later (found {t.found}, net {t.net(prices)})",
+      t.picked == {"red_potion": 2} and t.found == {"red_potion": 2} and t.net(prices) == 250 and t.changed)
 for n in (50, 50):
     t.observe({"red_potion": n}, True)
 check("a change of more than 20 needs 3 readings", t.counts["red_potion"] == 77)
 t.observe({"red_potion": 50}, True)
-check("...then counts", t.used == {"red_potion": 32})
+check(f"...then counts, the found ones first and free (net {t.net(prices)}, found {t.found})",
+      t.used == {"red_potion": 32} and t.free == {"red_potion": 2} and t.found == {"red_potion": 0}
+      and t.net(prices) == 30 * 50 and t.bought("red_potion") == 30)
 for n in (9, 9):
     t.observe({"red_potion": n}, True)
 check("so does a different number of digits", t.counts["red_potion"] == 50)
@@ -226,6 +228,25 @@ for n in (288, 288):
 check("...and the next count read counts from it", t.used == {"red_potion": 34})
 t.reset()
 check("reset forgets it all", not t.seen and t.cost(prices) == 0)
+
+# ---- found potions from an earlier session (kept with the settings, or set by hand)
+found = {"white_potion": 10}
+t = potions.PotionTracker(found)
+prices = {"white_potion": 350}
+for n in (200, 200, 196, 196):
+    t.observe({"white_potion": n}, True)
+check(f"found ones from before are used first, and cost nothing (net {t.net(prices)}, found {found})",
+      t.used == {"white_potion": 4} and t.net(prices) == 0 and found == {"white_potion": 6})
+for n in (186, 186):
+    t.observe({"white_potion": n}, True)
+check(f"...then bought ones cost their price (net {t.net(prices)})",
+      t.used == {"white_potion": 14} and t.net(prices) == 4 * 350 and found == {"white_potion": 0}
+      and t.covered(prices) == 10 * 350)
+t.reset()
+check("reset (a new session) keeps the found ones", t.found is found)
+for n in (186, 186, 200, 200):
+    t.observe({"white_potion": n}, False)
+check("picking some up while paused isn't counted as found", found == {"white_potion": 0})
 
 print("\nALL PASSED" if not failures else f"\n{failures} FAILED")
 sys.exit(1 if failures else 0)
