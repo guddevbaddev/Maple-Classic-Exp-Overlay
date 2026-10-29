@@ -61,7 +61,7 @@ You need a Mac with Apple Silicon (M1 or newer) and macOS 14 (Sonoma) or newer, 
 
 - **It closes right away, or Terminal says "killed":** do step 3 again.
 - **The timer starts, then pauses ("it can't see the game's EXP bar") even while you're killing monsters, or Details > Current never changes:** it can't see the game. Do step 5 again: remove it from Screen Recording with **–**, add it back with **+**, then Cmd+Q and open it again. Switching it off and on isn't always enough.
-- **It's gone (after Mission Control, or moving windows between desktops):** click its icon in the Dock and it comes back. With **Always on top** on, it's on every desktop, so it follows you there.
+- **It's gone (after Mission Control, or moving windows between desktops):** click its icon in the Dock and it comes back. It's on one desktop at a time, like any other window: in Mission Control (swipe up), drag it to the desktop you want, such as the game's.
 - **After an update:** **Update now** does step 3 by itself. From 0.9.26 on, every version is signed by the same certificate, so macOS keeps the Screen Recording permission across updates. Once more, for the first update to 0.9.26 (or later) from an older version, it wants step 5 again.
 - **Still not working:** ⚙ > **Save logs**, and attach the zip to a [bug report](../../issues).
 
@@ -187,7 +187,7 @@ Click **>** at the top right of the overlay to open the log. It's the table on t
 - **Window transparency.** Makes the overlay see-through, up to 40%. (More and it could fade out of sight, with Settings in it.)
 - **Size.** Makes the text and the whole window smaller or bigger, from 60% to 200%. The smallest text stops at a readable size, so it never gets too small to read. It's sized for each screen, so a window moved to a screen with different Windows scaling (like a 5K and a 1440p screen) looks the same size on both.
 - **Hotkeys.** Turn them on or off, and change them. See [Hotkeys](#hotkeys).
-- **Always on top of other windows.** Keeps the overlay above the game. It's on by default. On a Mac it's also on every desktop, and over the game when it's full screen.
+- **Always on top of other windows.** Keeps the overlay above the game. It's on by default. On a Mac it's still a window like any other to desktops: on one at a time, and moved between them in Mission Control (also to the game's own, when the game is full screen).
 - **Check for updates when it starts.** On by default. See [Updates](#updates).
 - **Open data folder.** Opens the folder where your log and settings are saved.
 - **Check for updates.** Checks right now.

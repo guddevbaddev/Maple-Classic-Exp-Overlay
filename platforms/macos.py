@@ -57,9 +57,11 @@ def _send(restype, *argtypes):
 
 _send_id, _send_uint, _send_text = _send(_vp), _send(ctypes.c_ulong), _send(ctypes.c_char_p)
 _send_at, _send_set = _send(_vp, ctypes.c_ulong), _send(None, ctypes.c_ulong)
-# NSWindowCollectionBehavior: on every desktop (Space), and over a full-screen app such as the
-# game; "move to the active desktop" can't be on at the same time.
-_ALL_SPACES, _TO_ACTIVE_SPACE, _FULL_SCREEN_AUX = 1 << 0, 1 << 1, 1 << 8
+# NSWindowCollectionBehavior: on every desktop (Space) / moved to the one in use / one of the
+# desktop's own windows, in Mission Control (what a normal window is) / left out of it / staying
+# put in it / allowed next to a full-screen app (the game).
+_ALL_SPACES, _TO_ACTIVE_SPACE, _MANAGED, _TRANSIENT, _STATIONARY = 1 << 0, 1 << 1, 1 << 2, 1 << 3, 1 << 4
+_FULL_SCREEN_AUX = 1 << 8
 
 MacWindow = namedtuple("MacWindow", "number pid owner title layer rect onscreen")
 
@@ -207,15 +209,16 @@ class MacPlatform(Platform):
                 found.append(w)
         return found
 
-    def on_every_desktop(self, root, on):
-        # Without it, an always-on-top window stays on the desktop it was opened on: moving windows
-        # between desktops in Mission Control (or the game going full screen) loses it.
+    def like_other_windows(self, root):
+        # An always-on-top window isn't one of a desktop's own windows to macOS: Mission Control
+        # hides it, so it can't be dragged to another desktop, and it can seem to vanish. Marked as
+        # one (as every normal window is), it's on one desktop and moves between them like any other
+        # (also to the game's, when it's full screen), and stays on top.
         try:
             windows = self._ns_windows(root.title())
             for w in windows:
                 now = _send_uint(w, _Sel(b"collectionBehavior"))
-                new = (now & ~_TO_ACTIVE_SPACE) | _ALL_SPACES | _FULL_SCREEN_AUX if on \
-                    else now & ~(_ALL_SPACES | _FULL_SCREEN_AUX)
+                new = (now & ~(_ALL_SPACES | _TO_ACTIVE_SPACE | _TRANSIENT | _STATIONARY)) | _MANAGED | _FULL_SCREEN_AUX
                 if new != now:
                     _send_set(w, _Sel(b"setCollectionBehavior:"), new)
             return bool(windows)

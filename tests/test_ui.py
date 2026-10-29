@@ -691,20 +691,21 @@ app.low_counts = {}
 del app.tracker.elapsed
 
 if sys.platform == "darwin":
-    # ---- Mac: an always-on-top overlay is on every desktop (or Mission Control can lose it)
+    # ---- Mac: even always on top, the overlay is a window like any other to desktops (Mission
+    # Control shows it, and it moves from one desktop to another), not on all of them
     import platforms.macos as mac
     root.update()
     behaviour = lambda: [mac._send_uint(w, mac._Sel(b"collectionBehavior")) for w in m.PLATFORM._ns_windows(root.title())]
-    on = m.PLATFORM.on_every_desktop(root, True)
-    check(f"on every desktop, and over a full-screen game ({behaviour()})",
-          on and behaviour() and all(b & mac._ALL_SPACES and b & mac._FULL_SCREEN_AUX for b in behaviour()))
-    m.PLATFORM.on_every_desktop(root, False)
-    check("...and back to one desktop when it isn't always on top",
-          behaviour() and not any(b & mac._ALL_SPACES for b in behaviour()))
+    normal = lambda: behaviour() and all(b & mac._MANAGED and b & mac._FULL_SCREEN_AUX and not b & (
+        mac._ALL_SPACES | mac._TRANSIENT | mac._STATIONARY) for b in behaviour())
+    root.attributes("-topmost", True)
+    done = m.PLATFORM.like_other_windows(root)
+    check(f"always on top, it's still a desktop's own window, on one desktop ({behaviour()})", done and normal())
+    m.PLATFORM.like_other_windows(root)
+    check("...and doing it again changes nothing", normal())
     app._bring_back()
     root.update()
-    check("clicking its Dock icon brings it back, on every desktop again",
-          root.state() == "normal" and all(b & mac._ALL_SPACES for b in behaviour()) == bool(app.cfg["topmost"]))
+    check("clicking its Dock icon brings it back, still a normal window", root.state() == "normal" and normal())
 
 check("the typeface is the bundled one, or it fell back cleanly", app._own_fonts in (True, False) and bool(app.theme.fam["extra"]))
 app.close()

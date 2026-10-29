@@ -166,9 +166,9 @@ class Platform(ABC):
         """Makes the font files available to this program only (not installed). True if all worked."""
         return False
 
-    def on_every_desktop(self, root, on):
-        """Shows the window on every desktop (macOS Spaces), so it isn't left behind on one; or
-        back to just one. True if it was done."""
+    def like_other_windows(self, root):
+        """Makes the window, even always on top, a normal one to desktops (macOS Spaces): on one at
+        a time, and moved between them as any other is. True if it was done."""
         return False
 
     def style_window(self, root, background, text):
