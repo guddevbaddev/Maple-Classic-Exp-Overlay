@@ -176,7 +176,9 @@ if sys.platform in ("win32", "darwin"):
         # app whose signature doesn't check out is signed again on this Mac.
         def real_app(where, signer):
             (where / "Contents" / "MacOS").mkdir(parents=True)
-            shutil.copy2("/usr/bin/true", where / "Contents" / "MacOS" / "run")
+            run = where / "Contents" / "MacOS" / "run"
+            shutil.copyfile("/usr/bin/true", run)          # (its contents only: not macOS's system flags)
+            run.chmod(0o755)
             (where / "Contents" / "Info.plist").write_text(
                 '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict>'
                 "<key>CFBundleIdentifier</key><string>test.overlay.bundle</string>"
