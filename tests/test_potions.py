@@ -141,6 +141,19 @@ for gh, s in ((7.0, 0.875), (11.0, 1.35), (22.0, 2.75)):
     got = potions.QuickslotReader(ASSETS, display_p3=True).read(display_p3(img), gh, (300, 500), now=0)
     check(f"...even in Display P3 colours ({got})", not {k: v for k, v in got.items() if want.get(k) != v})
 
+# ---- a Mac player's quickslot: an Orange Potion (321), a Lemon (512) and Meat (412) on the right-hand
+# keys, where a count's last digit is drawn over the potion's dark outline. At smaller sizes the
+# overlay read the Lemon's 512 as 51 (its "2" fits a little less than a digit must), or the Orange's
+# 321 as 3: a count is never read short, it's read in full or not at all.
+mac_qs = cv2.imread(str(Path(__file__).parent / "frames" / "quickslot_lemon512.png"))
+mac_want = {"orange_potion": 321, "lemon": 512, "meat": 412}
+for f, gh in ((1.0, 19.0), (0.8, 15.0), (0.6, 12.0), (0.55, 10.0), (0.5, 10.0)):
+    img = mac_qs if f == 1 else cv2.resize(mac_qs, None, fx=f, fy=f, interpolation=cv2.INTER_AREA)
+    got = potions.QuickslotReader(ASSETS).read(img, gh, (101 * f, 340 * f), now=0)
+    wrong = {k: v for k, v in got.items() if mac_want.get(k) != v}
+    check(f"a count by a potion's outline is read in full or not at all, at {f:.0%} ({got})",
+          not wrong and (got == mac_want or f < 0.6))
+
 # Where the quickslot is comes from the EXP number, to within a few pixels: the keys are lined up
 # with the quickslot itself, so a few pixels (or more) off still reads every key right.
 for name, shot_, anchor, want_ in (("player's quickslot", lemon, (404 - 600, 1085 - 870), {"orange_potion": 269, "lemon": 266}),

@@ -36,6 +36,9 @@ SHAPE_MIN = 0.6             # how well its light and dark parts must line up (tr
 RIVAL_SHAPE = 0.85          # ...and for another picture to cast doubt on it (a White Potion "fits"
                             # most potions' colours a little, but lines up at only ~0.7)
 DIGIT_MIN = 0.68            # how well each digit of a count must match (true ones: ~0.75+, stray bits ~0.6)
+DIGIT_TAIL = 0.6            # a count is only read if nothing just before or after it fits a digit this
+                            # well: a digit that fits a little less (drawn over a potion's dark outline)
+                            # means the count may go on, so it's not read rather than read short
 DIGIT_LEAD = 0.05           # ...and how far ahead of any other digit at that spot (a 6 and a 9 differ
                             # little at a slightly wrong size): an unsure count isn't read at all
 SCALE_PER_GH = 1 / 8        # the UI's scale for an EXP digit height (1.35 at gh ~11)
@@ -266,6 +269,19 @@ class QuickslotReader:
                       if e != d and m[r, max(0, i - 1):i + 2].size]
             return v - max(others, default=-1.0)
 
+        def tail(at, row):
+            """How well the best digit fits just after a count that ends at `at`."""
+            lo, hi = max(0, at - 1), at + gap
+            return max((float(m[r, lo:min(m.shape[1], hi)].max()) for m in maps for r in (row - 1, row, row + 1)
+                        if 0 <= r < rows and m[r, lo:min(m.shape[1], hi)].size), default=-1.0)
+
+        def head(i, row):
+            """How well the best digit fits just before a count whose first digit starts at `i`."""
+            fits = [float(m[r, lo:hi].max()) for d, m in enumerate(maps) for r in (row - 1, row, row + 1)
+                    for lo, hi in [(max(0, i - width[d] - gap), max(0, i - width[d] + 2))]
+                    if 0 <= r < rows and m[r, lo:hi].size]
+            return max(fits, default=-1.0)
+
         best = None
 
         def follow(text, fit, at, row, sure):
@@ -277,13 +293,16 @@ class QuickslotReader:
                 return                                # (a count ends where no digit follows)
             if at > area.shape[1] - 0.3 * dw:
                 return                                # it may go on past where it's looked at
+            if tail(at, row) >= DIGIT_TAIL:
+                return                                # it may go on: a digit that fits a little less
             if best is None or fit > best[1]:
                 best = (int(text), fit, sure)
 
         for row in range(rows):
             for start in range(0, min(int(1.4 * dw), maps[0].shape[1])):
                 for v, d, i, r in steps(start, row, True):
-                    follow(str(d), v, i + width[d], r, lead(v, d, i, r))
+                    if head(i, r) < DIGIT_TAIL:        # (not where a count starts: one more digit before it)
+                        follow(str(d), v, i + width[d], r, lead(v, d, i, r))
         if best is None or best[2] < DIGIT_LEAD:
             return None                               # (nothing, or a digit that could be another)
         return best[0], best[1] / len(str(best[0]))

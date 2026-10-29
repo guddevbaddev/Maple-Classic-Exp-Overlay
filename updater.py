@@ -193,10 +193,15 @@ else
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] update failed" >> "$log"
   rm -rf "$app"; mv "$app.old" "$app"
 fi
-# Signed again here, as macOS sees it on this Mac (it can stop an app copied in from elsewhere on
-# sight, "killed", before it runs a line). The download's SHA-256 was checked before any of this.
+# Its signature is kept when it checks out: macOS ties Screen Recording to the signer, so the
+# release's own signature (the same one every version) keeps that permission. Only one that
+# doesn't check out is signed again here, as macOS sees it on this Mac (it can stop an app copied
+# in from elsewhere on sight, "killed", before it runs a line). The download's SHA-256 was
+# checked before any of this.
 xattr -cr "$app" 2>/dev/null
-codesign --force --deep --sign - "$app" >/dev/null 2>&1 || echo "[$(date '+%Y-%m-%d %H:%M:%S')] couldn't sign the app again" >> "$log"
+if ! codesign --verify --deep --strict "$app" >/dev/null 2>&1; then
+  codesign --force --deep --sign - "$app" >/dev/null 2>&1 || echo "[$(date '+%Y-%m-%d %H:%M:%S')] couldn't sign the app again" >> "$log"
+fi
 if [ "$relaunch" = "1" ]; then open "$app"; fi
 rm -rf "$cleanup"
 rm -f "$0"

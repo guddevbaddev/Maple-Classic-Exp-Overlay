@@ -154,12 +154,16 @@ def main_mac():
         if (prefix / notice).is_file():
             shutil.copy2(prefix / notice, data.parent / f"{notice}.txt")
 
-    # Every program and library ad hoc signed again (copying and fixing them broke their
-    # signatures; Apple Silicon Macs won't run unsigned code), then the whole app.
+    # Every program and library signed again (copying and fixing them broke their signatures;
+    # Apple Silicon Macs won't run unsigned code), then the whole app. With the project's own
+    # certificate (MAC_SIGN_IDENTITY: its name, in a keychain this build can use), every version
+    # has the same signer, so macOS keeps the Screen Recording permission across updates;
+    # without it, ad hoc (a signature only these exact files match).
+    identity = os.environ.get("MAC_SIGN_IDENTITY") or "-"
     for f in [tess / "tesseract", *sorted((tess / "libs").glob("*"))]:
-        subprocess.run(["codesign", "--force", "--sign", "-", str(f)], check=True)
-    subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(app)], check=True)
-    check_mac_app(app)
+        subprocess.run(["codesign", "--force", "--sign", identity, str(f)], check=True)
+    subprocess.run(["codesign", "--force", "--deep", "--sign", identity, str(app)], check=True)
+    check_mac_app(app, identity)
 
     folder = RELEASE / "mac" / NAME
     shutil.rmtree(folder.parent, ignore_errors=True)
@@ -174,10 +178,14 @@ def main_mac():
     print(f"\nDone: {zip_path} ({zip_path.stat().st_size / 1e6:.0f} MB)")
 
 
-def check_mac_app(app):
-    """The app is whole: its signature holds, and its Tesseract runs on its own (no library
-    from Homebrew, and its English data found)."""
+def check_mac_app(app, identity="-"):
+    """The app is whole: its signature holds (by that signer), and its Tesseract runs on its
+    own (no library from Homebrew, and its English data found)."""
     subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)
+    if identity != "-":
+        info = subprocess.run(["codesign", "-dvv", str(app)], capture_output=True, text=True).stderr
+        if f"Authority={identity}" not in info.splitlines():
+            sys.exit(f"The app isn't signed by {identity}:\n{info}")
     tess = app / "Contents" / "Frameworks" / "tesseract"
     for f in [tess / "tesseract", *sorted((tess / "libs").glob("*"))]:
         links = subprocess.run(["otool", "-L", str(f)], capture_output=True, text=True, check=True).stdout

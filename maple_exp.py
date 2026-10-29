@@ -67,7 +67,7 @@ PLATFORM = create_platform()
 PLATFORM.setup_process()
 cv2.setNumThreads(1)
 
-VERSION = "0.9.25-beta"
+VERSION = "0.9.26-beta"
 WINDOW_TITLE = "Maple Classic Exp Overlay"    # the version is shown at the bottom, and in Settings
 OLD_TITLES = ("Maple EXP/hr",)               # what versions before 0.9.3 were called
 
@@ -3456,10 +3456,11 @@ class App:
     def _apply_window_settings(self):
         self.root.attributes("-topmost", bool(self.cfg["topmost"]))
         self.root.attributes("-alpha", 1 - min(MAX_TRANSPARENCY, max(0, int(self.cfg["transparency"]))) / 100)
-        # (on a Mac, an always-on-top window goes on every desktop, or Mission Control can lose it;
-        # again a moment later, as its window may not be made yet)
+        # (on a Mac, an always-on-top window is made one of the desktop's own, or Mission Control
+        # hides it and it can't be moved to another desktop; again a moment later, as its window may
+        # not be made yet)
         for delay in (0, 300):
-            self.root.after(delay, lambda: PLATFORM.on_every_desktop(self.root, bool(self.cfg["topmost"])))
+            self.root.after(delay, lambda: PLATFORM.like_other_windows(self.root))
 
     def _bring_back(self):
         """Clicking the overlay's Dock icon (Mac): back in front, and on the screen if it was off it."""

@@ -275,6 +275,48 @@ jobs:
           otool -L "$out/bin/tesseract"
           echo "TESSERACT_BIN=$out/bin/tesseract" >> "$GITHUB_ENV"
           echo "TESSDATA_DIR=$(brew --prefix tesseract)/share/tessdata" >> "$GITHUB_ENV"
+      - name: The project's signing certificate (the same signer every version)
+        # macOS ties the Screen Recording permission to who signed the app. Signed ad hoc, each
+        # version is a stranger to it and players have to allow it again after every update; signed
+        # by the project's own certificate (the secrets MAC_SIGNING_CERT, a .p12 file in base64, and
+        # MAC_SIGNING_CERT_PASSWORD), every version is the same app to macOS. It goes in a keychain
+        # made for this build only (deleted at the end). Without it, the app is signed ad hoc, as
+        # before (a release too, with a warning: players then allow Screen Recording again).
+        shell: bash
+        env:
+          CERT: ${{ secrets.MAC_SIGNING_CERT }}
+          CERT_PASSWORD: ${{ secrets.MAC_SIGNING_CERT_PASSWORD }}
+          TAG: ${{ needs.build.outputs.tag }}
+        run: |
+          if [ -z "$CERT" ]; then
+            if [ -n "$TAG" ]; then
+              echo "::warning::No MAC_SIGNING_CERT secret: this release is signed ad hoc, so Mac players allow Screen Recording again after updating. Add it (see the README: Building it yourself)."
+            else
+              echo "::warning::No MAC_SIGNING_CERT secret: this build is signed ad hoc."
+            fi
+            exit 0
+          fi
+          kc="$RUNNER_TEMP/signing.keychain-db"
+          kc_password=$(openssl rand -hex 24)
+          printf '%s' "$CERT" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$kc_password" "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "$kc_password" "$kc"
+          security import "$RUNNER_TEMP/cert.p12" -k "$kc" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$kc_password" "$kc" >/dev/null
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          # (its name, as codesign knows it: a certificate made on a Mac isn't "trusted" by others,
+          # which doesn't matter here, so this lists it without -v)
+          identity=$(security find-identity -p codesigning "$kc" | sed -n 's/^ *1) [0-9A-F]* "\(.*\)".*/\1/p')
+          if [ -z "$identity" ]; then
+            echo "::error::MAC_SIGNING_CERT has no code signing certificate with its private key in it."
+            security find-identity -p codesigning "$kc"
+            exit 1
+          fi
+          echo "Signing as: $identity"
+          echo "MAC_SIGN_IDENTITY=$identity" >> "$GITHUB_ENV"
+          echo "SIGNING_KEYCHAIN=$kc" >> "$GITHUB_ENV"
       - name: Build
         run: python build.py
       - name: The app starts, and keeps running
@@ -361,3 +403,6 @@ jobs:
           mkdir check
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$name" --dir check
           (cd check && shasum -a 256 -c ../release/SHA256SUMS-mac.txt)
+      - name: Delete the signing keychain
+        if: always() && env.SIGNING_KEYCHAIN != ''
+        run: security delete-keychain "$SIGNING_KEYCHAIN"
