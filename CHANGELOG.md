@@ -5,6 +5,7 @@
 **Fixed**
 - **Mac: every update asked for Screen Recording again.** macOS ties that permission to who signed the app, and each version was signed only for its own files, so to macOS each one was a new app. The Mac app is now signed by the project's own certificate, the same for every version, and **Update now** keeps that signature. macOS asks once more, for this update; after that, the permission stays.
 - **Mac: the overlay is a window like any other again**, on one desktop at a time (0.9.25 put it on all of them). Always on top, it's still one of the desktop's own windows: Mission Control shows it, so it can be dragged to another desktop (or to the game's, when it's full screen) and doesn't vanish. If it ever does, its Dock icon brings it back.
+- **A potion count could be read short** (a Lemon's 512 as 51, Meat's 412 as 4), mostly on a Mac and on the right-hand keys, where the last digit is drawn over the potion's dark outline and fits a little less well. A count is now only read when nothing just before or after it could be one more digit: in full, or not at all (then the next look, a few seconds later, reads it).
 - **Builds:** a Mac build no longer fails when GitHub turns the overlay's update check down for asking too often.
 
 ## 0.9.25-beta
