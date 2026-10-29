@@ -296,8 +296,22 @@ jobs:
           kill "$pid"
           if [ -s "$MAPLE_EXP_DATA/errors.log" ]; then
             cat "$MAPLE_EXP_DATA/errors.log"
-            echo "::error::The app wrote errors while starting."
-            exit 1
+            # One error is fine: GitHub turning the update check down because this runner asked too
+            # often (403/429). GitHub answered, so the check reached it with macOS's certificates.
+            if python3 - "$MAPLE_EXP_DATA/errors.log" <<'PY'
+          import re, sys
+          entries = re.split(r"(?m)^(?=\[\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\] v)", open(sys.argv[1], encoding="utf-8").read())
+          entries = [e.strip() for e in entries if e.strip()]
+          busy = lambda e: (e.splitlines()[0].endswith(": checking for updates")
+                            and re.search(r"(?m)^urllib\.error\.HTTPError: HTTP Error (403|429)\b.*\Z", e))
+          sys.exit(0 if entries and all(busy(e) for e in entries) else 1)
+          PY
+            then
+              echo "::warning::GitHub turned the update check down (too many requests from this runner): not counted."
+            else
+              echo "::error::The app wrote errors while starting."
+              exit 1
+            fi
           fi
       - name: SHA-256 of the download
         id: sum
