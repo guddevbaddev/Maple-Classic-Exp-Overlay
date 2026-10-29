@@ -605,9 +605,20 @@ app._update_display()
 root.update()
 hp = app.view.potion_tiles["hp"]
 shown = {n: hp.itemcget(getattr(hp, n), "text") for n in ("_title", "_v", "_sub")}
-check(f"two HP potions: both named, the one used most first, each one's count, and the HP used an hour of both ({shown})",
-      shown == {"_title": "RED + WHITE", "_v": "62 \u00b7 200 left", "_sub": "20/hr \u00b7 -1,000/hr"}
+check(f"two HP potions: both named, the one used most first (the other a found one), each one's count ({shown})",
+      shown == {"_title": "RED + WHITE (FOUND)", "_v": "62 \u00b7 200 left", "_sub": "20/hr \u00b7 -1,000/hr"}
       and hp._more_photo is not None and hp.itemcget(hp._more, "state") == "normal")
+# the one used less is a found one: using it costs nothing (net 0 on the profit)
+before = (app._profit_rate(3600.0), app.potions.cost(app.potion_prices()))
+for n in (195, 195):
+    app._handle(m.Reading(where="MapleStory window 1920x1080", potions={"red_potion": 62, "white_potion": n}))
+app._update_display()
+root.update()
+shown = {n: hp.itemcget(getattr(hp, n), "text") for n in ("_title", "_sub")}
+check(f"the second potion of a kind is a found one: using it costs nothing ({before[0]} -> {app._profit_rate(3600.0)}, {shown})",
+      app.found_keys() == {"white_potion"} and app._profit_rate(3600.0) == before[0]
+      and app.potions.cost(app.potion_prices()) == before[1] + 5 * 350
+      and shown == {"_title": "RED + WHITE (FOUND)", "_sub": "25/hr \u00b7 -1,000/hr"})
 hero = app.view.hero
 hero.show(eta="Lv 51 in 1 h 37 min")       # (read right away: the window's own refresh shows its real line)
 parts = [hero.itemcget(i, "text") for i in (hero._eta, hero._eta_in, hero._eta_time)]

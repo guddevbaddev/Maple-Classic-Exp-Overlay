@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.28-beta
+
+**New**
+- **A second potion of a kind is a found one.** With two HP (or MP) potions on your keys, the one you use more counts as bought and the other as found: using it costs nothing, net 0 on **Profit / hr**, without setting anything. The tile shows it: "Orange + Meat (found)", and its cost an hour is only the bought one's.
+
 ## 0.9.27-beta
 
 **New**

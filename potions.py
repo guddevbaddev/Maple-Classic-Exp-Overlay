@@ -491,13 +491,14 @@ class PotionTracker:
         """Mesos worth of the potions used."""
         return self._worth(self.used, prices)
 
-    def covered(self, prices):
-        """Mesos worth of the found potions among them (free)."""
-        return self._worth(self.free, prices)
+    def net(self, prices, found_kinds=()):
+        """What potions cost: the bought ones used. Found ones are free, and so is every potion in
+        found_kinds (the second potion of a kind on the quickslot: see the app's found_keys)."""
+        return sum(self.bought(k) * prices.get(k, 0) for k in self.used if k not in found_kinds)
 
-    def net(self, prices):
-        """What potions cost: the bought ones used (found ones are free)."""
-        return self.cost(prices) - self.covered(prices)
+    def covered(self, prices, found_kinds=()):
+        """Mesos worth of the found potions among the ones used (free)."""
+        return self.cost(prices) - self.net(prices, found_kinds)
 
     @property
     def seen(self):

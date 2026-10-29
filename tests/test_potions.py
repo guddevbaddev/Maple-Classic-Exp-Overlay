@@ -248,5 +248,13 @@ for n in (186, 186, 200, 200):
     t.observe({"white_potion": n}, False)
 check("picking some up while paused isn't counted as found", found == {"white_potion": 0})
 
+# ---- the second potion of a kind on the quickslot is a found one: free
+t = potions.PotionTracker()
+prices = {"orange_potion": 150, "meat": 80}
+for counts in ({"orange_potion": 300, "meat": 400},) * 2 + ({"orange_potion": 290, "meat": 395},) * 2:
+    t.observe(counts, True)
+check(f"a potion counted as found costs nothing, the other its price ({t.net(prices, {'meat'})})",
+      t.net(prices, {"meat"}) == 10 * 150 and t.covered(prices, {"meat"}) == 5 * 80 and t.net(prices) == 10 * 150 + 5 * 80)
+
 print("\nALL PASSED" if not failures else f"\n{failures} FAILED")
 sys.exit(1 if failures else 0)
