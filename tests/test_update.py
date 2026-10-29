@@ -6,6 +6,7 @@ Run from the project folder:  py -3 tests/test_update.py
 import hashlib
 import io
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -170,6 +171,33 @@ if sys.platform in ("win32", "darwin"):
               and not (installed / "Contents" / "Resources" / "only-old.txt").exists())
         check("...keeping its links", (installed / "Contents" / "Frameworks" / "link").is_symlink())
         check("...with nothing left over", not installed.with_name(installed.name + ".old").exists() and not work.exists())
+
+        # The release's own signature stays (macOS keeps Screen Recording for that signer); only an
+        # app whose signature doesn't check out is signed again on this Mac.
+        def real_app(where, signer):
+            (where / "Contents" / "MacOS").mkdir(parents=True)
+            shutil.copy2("/usr/bin/true", where / "Contents" / "MacOS" / "run")
+            (where / "Contents" / "Info.plist").write_text(
+                '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict>'
+                "<key>CFBundleIdentifier</key><string>test.overlay.bundle</string>"
+                "<key>CFBundleExecutable</key><string>run</string></dict></plist>\n")
+            if signer:
+                subprocess.run(["codesign", "--force", "--sign", "-", "--identifier", signer, str(where)],
+                               check=True, capture_output=True)
+        signed_as = lambda app: next((line.split("=", 1)[1] for line in subprocess.run(
+            ["codesign", "-dv", str(app)], capture_output=True, text=True).stderr.splitlines()
+            if line.startswith("Identifier=")), None)
+        for signer, name in (("the.release.signer", "a signed release keeps its own signature"),
+                             (None, "an unsigned one is signed on this Mac, so it runs")):
+            root3 = Path(tempfile.mkdtemp())
+            installed3, work3 = root3 / f"{u.NAME}.app", root3 / "work"
+            real_app(installed3, "old.version")
+            real_app(work3 / "new" / u.NAME / f"{u.NAME}.app", signer)
+            u.start_install(work3 / "new" / u.NAME / f"{u.NAME}.app", installed3, work3, root3 / "u.log",
+                            pid=finished.pid, relaunch=False, wait=True)
+            ok = subprocess.run(["codesign", "--verify", "--deep", "--strict", str(installed3)]).returncode == 0
+            check(f"{name} ({signed_as(installed3)})",
+                  ok and signed_as(installed3) == (signer or "test.overlay.bundle"))
     else:
         installed = root / "Games" / u.NAME
         (installed / "_internal").mkdir(parents=True)

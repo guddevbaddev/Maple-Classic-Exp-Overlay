@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.26-beta
+
+**Fixed**
+- **Mac: every update asked for Screen Recording again.** macOS ties that permission to who signed the app, and each version was signed only for its own files, so to macOS each one was a new app. The Mac app is now signed by the project's own certificate, the same for every version, and **Update now** keeps that signature. macOS asks once more, for this update; after that, the permission stays.
+- **Builds:** a Mac build no longer fails when GitHub turns the overlay's update check down for asking too often.
+
 ## 0.9.25-beta
 
 (0.9.24 was never released: its Mac download couldn't be built while GitHub had no macOS 14 machine free. This is the same fix.)

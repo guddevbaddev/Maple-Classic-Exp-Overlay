@@ -43,11 +43,11 @@ You need a Mac with Apple Silicon (M1 or newer) and macOS 14 (Sonoma) or newer, 
 
 1. On the **[download page](../../releases/latest)**, under **Assets**, click the file ending in **-mac.zip**.
 2. Double-click the zip in your Downloads folder to unpack it, and drag **Maple Classic Exp Overlay** (the app) into your **Applications** folder. (If you had an older copy, delete it first rather than replacing it.)
-3. Open **Terminal** (press Cmd+Space, type Terminal, press Enter), paste these two lines and press Enter. They take away the "downloaded from the internet" mark and sign the app on your Mac, so macOS lets it start (without them it can close the moment it opens, with no message):
+3. Open **Terminal** (press Cmd+Space, type Terminal, press Enter), paste these two lines and press Enter. They take away the "downloaded from the internet" mark, and sign the app on your Mac only if its own signature doesn't check out, so macOS lets it start (without them it can close the moment it opens, with no message):
 
    ```
    xattr -cr "/Applications/Maple Classic Exp Overlay.app"
-   codesign --force --deep --sign - "/Applications/Maple Classic Exp Overlay.app"
+   codesign --verify --deep --strict "/Applications/Maple Classic Exp Overlay.app" 2>/dev/null || codesign --force --deep --sign - "/Applications/Maple Classic Exp Overlay.app"
    ```
 4. Open the app from Applications. If macOS says it can't check it for malware (it isn't from a registered Apple developer): click **Done**, open **System Settings > Privacy & Security**, scroll down, and click **Open Anyway** next to Maple Classic Exp Overlay.
 5. **Let it see the game (Screen Recording).** That's how it reads your EXP. Open **System Settings > Privacy & Security > Screen Recording** (on newer macOS: **Screen & System Audio Recording**):
@@ -62,7 +62,7 @@ You need a Mac with Apple Silicon (M1 or newer) and macOS 14 (Sonoma) or newer, 
 - **It closes right away, or Terminal says "killed":** do step 3 again.
 - **The timer starts, then pauses ("it can't see the game's EXP bar") even while you're killing monsters, or Details > Current never changes:** it can't see the game. Do step 5 again: remove it from Screen Recording with **–**, add it back with **+**, then Cmd+Q and open it again. Switching it off and on isn't always enough.
 - **It's gone (after Mission Control, or moving windows between desktops):** click its icon in the Dock and it comes back. With **Always on top** on, it's on every desktop, so it follows you there.
-- **After an update:** **Update now** does step 3 by itself, but macOS may want step 5 again for the new version.
+- **After an update:** **Update now** does step 3 by itself. From 0.9.26 on, every version is signed by the same certificate, so macOS keeps the Screen Recording permission across updates. Once more, for the first update to 0.9.26 (or later) from an older version, it wants step 5 again.
 - **Still not working:** ⚙ > **Save logs**, and attach the zip to a [bug report](../../issues).
 
 ## How to use it
@@ -284,7 +284,7 @@ This is a beta, and I'm still adding features and fixing things.
 
 **When a new version is out,** the overlay tells you when you start it, and shows what's new. Click **Get the update** to open the download page, or **Not now** / **Skip this version** if you'd rather wait.
 
-**To update:** click **Update now** in the window that says a new version is out (from 0.9.13-beta on). It downloads the new version from this page, checks its SHA-256, and restarts the overlay as the new version; nothing is installed if the check fails. On a Mac, macOS may ask for Screen Recording again afterwards. Or, as before, download the newest zip from the [download page](../../releases/latest) and use it instead of the old folder. Your log, notes and settings stay, because they're saved separately (⚙ → **Open data folder** shows where).
+**To update:** click **Update now** in the window that says a new version is out (from 0.9.13-beta on). It downloads the new version from this page, checks its SHA-256, and restarts the overlay as the new version; nothing is installed if the check fails. On a Mac, the Screen Recording permission stays from 0.9.26 on (the first update to it from an older version asks once more). Or, as before, download the newest zip from the [download page](../../releases/latest) and use it instead of the old folder. Your log, notes and settings stay, because they're saved separately (⚙ → **Open data folder** shows where).
 
 **To remove it:** delete its folder. To also delete your log and settings, delete the folder that **Open data folder** opens.
 
@@ -328,7 +328,14 @@ py -3 tests/test_ui.py     # opens the real window for a few seconds (the notes 
 
 To build with exactly the packages the releases use: `py -3 -m pip install --require-hashes -r requirements-build.txt`.
 
-**The Mac download** is built the same way on a Mac: `brew install tesseract dylibbundler`, `python3 -m pip install --require-hashes -r requirements-build-mac.txt`, then `python3 build.py`. It makes `release/Maple-Classic-Exp-Overlay-v<version>-mac.zip`, with the app and its own copy of Tesseract (and the libraries it needs), signed ad hoc. The Build workflow does this too, after the Windows build, and adds the Mac zip to the same draft release.
+**The Mac download** is built the same way on a Mac: `brew install tesseract dylibbundler`, `python3 -m pip install --require-hashes -r requirements-build-mac.txt`, then `python3 build.py`. It makes `release/Maple-Classic-Exp-Overlay-v<version>-mac.zip`, with the app and its own copy of Tesseract (and the libraries it needs), signed ad hoc (or by the certificate named in `MAC_SIGN_IDENTITY`). The Build workflow does this too, after the Windows build, and adds the Mac zip to the same draft release.
+
+**The Mac signing certificate.** macOS ties the Screen Recording permission to whoever signed the app, so releases are signed by the project's own certificate: the same signer every version, and macOS keeps the permission across updates. It's self-signed (free; not an Apple Developer ID, so Gatekeeper still asks for **Open Anyway** on a fresh install). The Build workflow reads it from two repository secrets, and won't make a release without them:
+1. On a Mac, open **Keychain Access**, then **Keychain Access > Certificate Assistant > Create a Certificate…**. Name: `Maple Classic Exp Overlay`, Identity Type: **Self Signed Root**, Certificate Type: **Code Signing**. Click **Create**.
+2. In **login > My Certificates**, right-click it, **Export "Maple Classic Exp Overlay"…**, save it as `signing.p12` with a strong password.
+3. In Terminal: `base64 -i signing.p12 | pbcopy` (it's now on the clipboard).
+4. On GitHub: **Settings > Secrets and variables > Actions > New repository secret**: `MAC_SIGNING_CERT`, paste. Then another: `MAC_SIGNING_CERT_PASSWORD`, the password.
+5. Delete `signing.p12`. Keep the certificate in your keychain (or the .p12 somewhere safe): a new certificate means players allow Screen Recording once more.
 
 GitHub runs the logic tests on every push ([Tests workflow](.github/workflows/tests.yml)). The [Build workflow](.github/workflows/build.yml) builds the download on GitHub (Actions tab, **Build**, **Run workflow**), runs all the tests first, and signs the .exe once code signing is set up. Pushing a version tag also attests the zip and drafts the release with it, and so does **Run workflow** on `main` with **release** ticked (it makes the tag `v` + `VERSION` itself, once the build has passed); releases are only ever made those ways. The [Publish workflow](.github/workflows/publish.yml) (Actions tab, **Publish**, **Run workflow**, with the tag) publishes such a draft once it's complete: the tag on `main`, both zips on it and each matching SHA256SUMS.txt. If the draft's notes still say "(Notes to come.)", they become that version's part of this CHANGELOG.
 
