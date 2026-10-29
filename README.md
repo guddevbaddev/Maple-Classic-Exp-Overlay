@@ -62,7 +62,7 @@ You need a Mac with Apple Silicon (M1 or newer) and macOS 14 (Sonoma) or newer, 
 - **It closes right away, or Terminal says "killed":** do step 3 again.
 - **The timer starts, then pauses ("it can't see the game's EXP bar") even while you're killing monsters, or Details > Current never changes:** it can't see the game. Do step 5 again: remove it from Screen Recording with **–**, add it back with **+**, then Cmd+Q and open it again. Switching it off and on isn't always enough.
 - **It's gone (after Mission Control, or moving windows between desktops):** click its icon in the Dock and it comes back. It's on one desktop at a time, like any other window: in Mission Control (swipe up), drag it to the desktop you want, such as the game's.
-- **After an update:** **Update now** does step 3 by itself. From 0.9.26 on, every version is signed by the same certificate, so macOS keeps the Screen Recording permission across updates. Once more, for the first update to 0.9.26 (or later) from an older version, it wants step 5 again.
+- **After an update:** **Update now** does step 3 by itself. macOS may want step 5 again for the new version. (Soon releases will all be signed by the same certificate, and then macOS keeps the permission across updates.)
 - **Still not working:** ⚙ > **Save logs**, and attach the zip to a [bug report](../../issues).
 
 ## How to use it
@@ -284,7 +284,7 @@ This is a beta, and I'm still adding features and fixing things.
 
 **When a new version is out,** the overlay tells you when you start it, and shows what's new. Click **Get the update** to open the download page, or **Not now** / **Skip this version** if you'd rather wait.
 
-**To update:** click **Update now** in the window that says a new version is out (from 0.9.13-beta on). It downloads the new version from this page, checks its SHA-256, and restarts the overlay as the new version; nothing is installed if the check fails. On a Mac, the Screen Recording permission stays from 0.9.26 on (the first update to it from an older version asks once more). Or, as before, download the newest zip from the [download page](../../releases/latest) and use it instead of the old folder. Your log, notes and settings stay, because they're saved separately (⚙ → **Open data folder** shows where).
+**To update:** click **Update now** in the window that says a new version is out (from 0.9.13-beta on). It downloads the new version from this page, checks its SHA-256, and restarts the overlay as the new version; nothing is installed if the check fails. On a Mac, macOS may ask for Screen Recording again afterwards (until releases are signed by the project's certificate: then the permission stays). Or, as before, download the newest zip from the [download page](../../releases/latest) and use it instead of the old folder. Your log, notes and settings stay, because they're saved separately (⚙ → **Open data folder** shows where).
 
 **To remove it:** delete its folder. To also delete your log and settings, delete the folder that **Open data folder** opens.
 
@@ -330,7 +330,7 @@ To build with exactly the packages the releases use: `py -3 -m pip install --req
 
 **The Mac download** is built the same way on a Mac: `brew install tesseract dylibbundler`, `python3 -m pip install --require-hashes -r requirements-build-mac.txt`, then `python3 build.py`. It makes `release/Maple-Classic-Exp-Overlay-v<version>-mac.zip`, with the app and its own copy of Tesseract (and the libraries it needs), signed ad hoc (or by the certificate named in `MAC_SIGN_IDENTITY`). The Build workflow does this too, after the Windows build, and adds the Mac zip to the same draft release.
 
-**The Mac signing certificate.** macOS ties the Screen Recording permission to whoever signed the app, so releases are signed by the project's own certificate: the same signer every version, and macOS keeps the permission across updates. It's self-signed (free; not an Apple Developer ID, so Gatekeeper still asks for **Open Anyway** on a fresh install). The Build workflow reads it from two repository secrets, and won't make a release without them:
+**The Mac signing certificate.** macOS ties the Screen Recording permission to whoever signed the app, so releases are signed by the project's own certificate: the same signer every version, and macOS keeps the permission across updates. It's self-signed (free; not an Apple Developer ID, so Gatekeeper still asks for **Open Anyway** on a fresh install). The Build workflow reads it from two repository secrets (without them, it signs ad hoc and says so):
 1. On a Mac, open **Keychain Access**, then **Keychain Access > Certificate Assistant > Create a Certificate…**. Name: `Maple Classic Exp Overlay`, Identity Type: **Self Signed Root**, Certificate Type: **Code Signing**. Click **Create**.
 2. In **login > My Certificates**, right-click it, **Export "Maple Classic Exp Overlay"…**, save it as `signing.p12` with a strong password.
 3. In Terminal: `base64 -i signing.p12 | pbcopy` (it's now on the clipboard).

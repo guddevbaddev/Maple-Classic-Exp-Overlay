@@ -280,7 +280,8 @@ jobs:
         # version is a stranger to it and players have to allow it again after every update; signed
         # by the project's own certificate (the secrets MAC_SIGNING_CERT, a .p12 file in base64, and
         # MAC_SIGNING_CERT_PASSWORD), every version is the same app to macOS. It goes in a keychain
-        # made for this build only (deleted at the end). A release isn't made without it.
+        # made for this build only (deleted at the end). Without it, the app is signed ad hoc, as
+        # before (a release too, with a warning: players then allow Screen Recording again).
         shell: bash
         env:
           CERT: ${{ secrets.MAC_SIGNING_CERT }}
@@ -289,10 +290,10 @@ jobs:
         run: |
           if [ -z "$CERT" ]; then
             if [ -n "$TAG" ]; then
-              echo "::error::No MAC_SIGNING_CERT secret, so this release would make Mac players allow Screen Recording again. Add it (see the README: Building it yourself)."
-              exit 1
+              echo "::warning::No MAC_SIGNING_CERT secret: this release is signed ad hoc, so Mac players allow Screen Recording again after updating. Add it (see the README: Building it yourself)."
+            else
+              echo "::warning::No MAC_SIGNING_CERT secret: this build is signed ad hoc."
             fi
-            echo "::warning::No MAC_SIGNING_CERT secret: this build is signed ad hoc."
             exit 0
           fi
           kc="$RUNNER_TEMP/signing.keychain-db"
