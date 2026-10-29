@@ -575,6 +575,7 @@ m.simpledialog.askinteger = real_ask
 
 # ---- potions: what they cost, in Details, and their prices in Settings
 app.session.reset()
+app.cfg["found_potions"].clear()
 app.session.on = True
 app.tracker.elapsed = lambda: 3600.0
 for v in (10000,) * 3 + (14000,) * 3:
@@ -585,9 +586,12 @@ app._update_display()
 root.update()
 details = {name: app.view.details.itemcget(app.view.details._vals[name], "text") for name in ("Potions", "Profit / hr")}
 check(f"Profit / hr is also a tile, next to Mesos / hr ({app.view.tiles['Profit / hr'].itemcget(app.view.tiles['Profit / hr']._v, 'text')})",
-      app.view.tiles["Profit / hr"].itemcget(app.view.tiles["Profit / hr"]._v, "text") == "3,100")
-check(f"Details shows what potions cost and what the picked-up ones covered ({details})",
-      details == {"Potions": "-1,000 / +100", "Profit / hr": "3,100"})
+      app.view.tiles["Profit / hr"].itemcget(app.view.tiles["Profit / hr"]._v, "text") == "3,000")
+check(f"Details shows what potions cost and what found ones covered ({details})",
+      details == {"Potions": "-1,000 / +0", "Profit / hr": "3,000"})
+check(f"the 2 picked up after are kept as found ones, for later, and saved ({app.cfg['found_potions']})",
+      app.cfg["found_potions"] == {"red_potion": 2}
+      and json.loads(m.CONFIG_PATH.read_text())["found_potions"] == {"red_potion": 2})
 tiles = {k: {n: t.itemcget(getattr(t, n), "text") for n in ("_title", "_v", "_sub")} for k, t in app.view.potion_tiles.items()}
 check(f"the HP tile shows the potion seen, how many are left, how many an hour and what they cost an hour ({tiles['hp']})",
       tiles["hp"] == {"_title": "RED POTION", "_v": "62 left", "_sub": "20/hr \u00b7 -1,000/hr"})
@@ -635,6 +639,56 @@ root.update()
 check("a price changed there is saved and used", app.cfg["potion_prices"] == {"red_potion": 80}
       and json.loads(m.CONFIG_PATH.read_text())["potion_prices"] == {"red_potion": 80}
       and app.potion_prices()["red_potion"] == 80)
+app.cfg["potion_prices"] = {}
+
+# ---- found potions: clicking the HP tile lists the HP potions, to set how many are found ones
+def widgets(top, kind):
+    stack, out = [top], []
+    while stack:
+        w = stack.pop()
+        out += [w] if isinstance(w, kind) else []
+        stack.extend(w.winfo_children())
+    return out
+tile = app.view.potion_tiles["hp"]
+tile.event_generate("<Button-1>", x=10, y=10)
+root.update()
+found_win = getattr(app, "found_win", None)
+labels = [w.cget("text") for w in widgets(found_win, m.tk.Label)] if found_win else []
+hp_names = [p["name"] for p in app.reader.quickslot.catalog if p.get("kind") == "hp"]
+check(f"clicking the HP potion tile opens its found potions: every HP potion, none for MP ({len(hp_names)})",
+      found_win is not None and found_win.winfo_exists()
+      and all(any(n in t for t in labels) for n in hp_names) and not any("Blue Potion" in t for t in labels))
+rows = {}                                   # row -> (name, found entry)
+for w in widgets(found_win, m.tk.Label) + widgets(found_win, m.tk.Entry):
+    info = w.grid_info()
+    if isinstance(w, m.tk.Entry):
+        rows.setdefault(info["row"], ["", None])[1] = w
+    elif info.get("column") == 0:
+        rows.setdefault(info["row"], ["", None])[0] = w.cget("text")
+rows = [rows[r] for r in sorted(rows) if rows[r][1] is not None]
+check(f"...the one on your keys first, with its found ones ({rows[0][0].strip()}: {rows[0][1].get()})",
+      "Red Potion" in rows[0][0] and "on your keys" in rows[0][0] and rows[0][1].get() == "2")
+white = next(e for name, e in rows if "White Potion" in name)
+white.delete(0, "end")
+white.insert(0, "40")
+next(b for b in widgets(found_win, m.Button) if b.text == "Save").command()
+root.update()
+check(f"found ones set there are saved ({app.cfg['found_potions']})",
+      app.cfg["found_potions"] == {"red_potion": 2, "white_potion": 40}
+      and json.loads(m.CONFIG_PATH.read_text())["found_potions"] == {"red_potion": 2, "white_potion": 40})
+app.session.reset()
+app.session.on = True
+for n in (200, 200, 190, 190):
+    app._handle(m.Reading(where="MapleStory window 1920x1080", potions={"white_potion": n}))
+app._update_display()
+root.update()
+details = {name: app.view.details.itemcget(app.view.details._vals[name], "text") for name in ("Potions", "Profit / hr")}
+check(f"using found White Potions costs nothing ({details}, {app.cfg['found_potions']})",
+      details["Potions"] == "-3,500 / +3,500" and app.cfg["found_potions"]["white_potion"] == 30)
+m.save_config(dict(app.cfg, found_potions={"white_potion": -3, "x": "y", "red_potion": 5}))
+check("found potions that make no sense aren't loaded", m.load_config()["found_potions"] == {"red_potion": 5})
+app.cfg["found_potions"].clear()
+m.save_config(app.cfg)
 app.session.reset()
 
 # ---- the low-potion sound: each potion used once it's down to "Warn at" (15 to start with)

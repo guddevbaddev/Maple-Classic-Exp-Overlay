@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.27-beta
+
+**New**
+- **Found potions are free.** Potions you pick up are kept as found ones, from one session to the next, and they're used before bought ones: a found one costs nothing, so **Profit / hr** only counts the potions you paid for. (Before, a found potion only covered its cost in the session you picked it up, so White Potions found last time were charged as if bought.)
+- **Click the HP or MP potion tile** to see your found potions of that kind (every one, yours first) and set how many you have, for ones found while the overlay wasn't running.
+
 ## 0.9.26-beta
 
 **Fixed**

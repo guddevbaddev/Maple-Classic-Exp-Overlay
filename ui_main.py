@@ -603,6 +603,10 @@ class MainView(tk.Frame):
         for i, kind in enumerate(("hp", "mp")):
             t = PotionTile(self.potions_row, theme, kind, pw, bg)
             t.grid(row=0, column=i, padx=(0 if i == 0 else g.px(8), 0))
+            if "potions" in cb:                            # click: its found potions
+                t.configure(cursor="hand2")
+                t.bind("<Button-1>", lambda e, k=kind, tile=t: cb["potions"](k, tile))
+                Tip(t, theme, f"Your found {kind.upper()} potions (they cost nothing)")
             self.potion_tiles[kind] = t
 
         self.more_btn = Button(self, theme, text="Details", icon="down", kind="ghost", width=INNER, height=30, radius=10,
