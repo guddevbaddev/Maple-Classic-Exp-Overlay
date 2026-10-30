@@ -67,7 +67,7 @@ PLATFORM = create_platform()
 PLATFORM.setup_process()
 cv2.setNumThreads(1)
 
-VERSION = "0.9.27-beta"
+VERSION = "0.9.28-beta"
 WINDOW_TITLE = "Maple Classic Exp Overlay"    # the version is shown at the bottom, and in Settings
 OLD_TITLES = ("Maple EXP/hr",)               # what versions before 0.9.3 were called
 
@@ -4333,31 +4333,42 @@ class App:
         many of them all are used an hour and what they cost an hour (over the time tracked, once
         it's been a minute). The count is in the tile's colour when any of them is down to Warn at."""
         p, el, prices = self.potions, self.tracker.elapsed(), self.potion_prices()
-        kinds = {c["key"]: c.get("kind", "hp") for c in self.reader.quickslot.catalog}
         shown = {}
-        for kind in ("hp", "mp"):
-            keys = [k for k in p.counts if kinds.get(k) == kind]
+        for kind, keys in self._by_kind().items():
             if not keys:
                 shown[kind] = dict(icon=None, title=None, value="\u2014",
                                    sub="Not on quickslot" if p.seen or self.tracker.req else "")
                 continue
-            keys.sort(key=lambda k: (-p.used.get(k, 0), p.counts[k]))
             used = sum(p.used.get(k, 0) for k in keys)
             if used and el >= 60:
                 per_hour = used / el * 3600
-                cost = sum(p.bought(k) * prices.get(k, 0) for k in keys) / el * 3600    # (found ones are free)
+                cost = p.bought(keys[0]) * prices.get(keys[0], 0) / el * 3600    # (the others are found ones: free)
                 money = fmt_num(cost) if cost < 10_000 else fmt_short(cost)
                 sub = f"{fmt_num(per_hour)}/hr \u00b7 -{money}/hr" if cost else f"{fmt_num(per_hour)}/hr"
             else:
                 sub = f"{used} used" if used else "None used yet"
             # Two or more: short names ("Orange + White"), and each one's count in the same order.
             short = lambda k: self.potion_name(k).replace(" Potion", "")
-            title = self.potion_name(keys[0]) if len(keys) == 1 else " + ".join(short(k) for k in keys)
+            title = self.potion_name(keys[0]) if len(keys) == 1 else \
+                " + ".join(short(k) for k in keys) + " (found)"     # (the second one on is a found one)
             shown[kind] = dict(icon=self._potion_icon(keys[0]), title=title,
                                value=" \u00b7 ".join(fmt_num(p.counts[k]) for k in keys) + " left", sub=sub,
                                low=any(p.counts[k] <= self.cfg["low_potions"] for k in keys),
                                more=tuple(i for i in map(self._potion_icon, keys[1:]) if i is not None))
         return shown
+
+    def _by_kind(self):
+        """{"hp": [...], "mp": [...]}: the potions of each kind on the quickslot, the one used most
+        first (then the one with fewest left)."""
+        p = self.potions
+        kinds = {c["key"]: c.get("kind", "hp") for c in self.reader.quickslot.catalog}
+        return {kind: sorted((k for k in p.counts if kinds.get(k) == kind),
+                             key=lambda k: (-p.used.get(k, 0), p.counts[k])) for kind in ("hp", "mp")}
+
+    def found_keys(self):
+        """With two (or more) potions of a kind on the quickslot, the one used most is the bought one
+        and the others are found ones: free, so using them doesn't come off the profit."""
+        return {k for keys in self._by_kind().values() for k in keys[1:]}
 
     def potion_name(self, key):
         return next((p["name"] for p in self.reader.quickslot.catalog if p["key"] == key), key)
@@ -4368,14 +4379,14 @@ class App:
         if not p.seen:
             return "\u2014"
         prices = self.potion_prices()
-        return f"-{fmt_num(p.cost(prices))} / +{fmt_num(p.covered(prices))}"
+        return f"-{fmt_num(p.cost(prices))} / +{fmt_num(p.covered(prices, self.found_keys()))}"
 
     def _profit_rate(self, el):
         """Mesos per hour, less what the bought potions used cost (found ones are free)."""
         m, p = self.meso, self.potions
         if el < 30 or (m.value is None and not p.seen):
             return None
-        return (m.gained - p.net(self.potion_prices())) / el * 3600
+        return (m.gained - p.net(self.potion_prices(), self.found_keys())) / el * 3600
 
     def _log_tick(self, now):
         if not self.tracker.running or self.skip_log:
