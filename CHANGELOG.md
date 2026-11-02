@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.29-beta
+
+**New**
+- **Full profit / loss**, a switch at the top. With it on, **Start** waits for a look at your inventory's mesos, and **Reset** does too before it ends the session: your **Net** is the difference, so a repot, etc and equips sold, anything bought or sold in between is counted as it really happened, not as a rate thrown off by a shop visit. The quickslot's potions are counted at both ends at their prices, so potions bought and not used yet aren't a loss. The profit tile shows **Net profit** so far, Details shows your mesos at the start and now, and each finished session is saved to **profit_log.json** / **profit_log.txt** in the data folder.
+
 ## 0.9.28-beta
 
 **New**

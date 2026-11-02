@@ -702,6 +702,87 @@ app.cfg["found_potions"].clear()
 m.save_config(app.cfg)
 app.session.reset()
 
+# ---- Full profit / loss: the mesos at Start and at Reset (the inventory open both times), Net between
+fake_elapsed = app.tracker.__dict__.pop("elapsed", None)      # (the real clock, for this part)
+app.session.reset()
+app.cfg["potion_prices"]["red_potion"] = 50
+seen = lambda **k: app._handle(m.Reading(where="MapleStory window 1920x1080", **k))
+tile = lambda: app.view.tiles["Profit / hr"].itemcget(app.view.tiles["Profit / hr"]._v, "text")
+label = lambda: app.view.tiles["Profit / hr"].itemcget(app.view.tiles["Profit / hr"]._label, "text")
+check("the Full profit / loss switch is at the top, off to start with", app.view.profit.winfo_ismapped()
+      and not app.view.profit.on and label() == "PROFIT / HR")
+app.view.profit.toggle()
+root.update()
+check(f"switched on, the profit tile is the session's Net, and it's kept ({label()})",
+      label() == "NET PROFIT" and json.loads(m.CONFIG_PATH.read_text())["full_profit"] is True)
+app.toggle()
+root.update()
+check(f"Start waits for the inventory's mesos ({app.status.get()[:60]}...)", not app.session.on
+      and app._start_text == "Cancel" and "open your inventory" in app.status.get())
+app.toggle()
+check("...pressed again, it's cancelled", not app.session.on and app._start_text == "Start" and not app.profit.waiting)
+app.toggle()
+for _ in range(2):
+    seen(potions={"red_potion": 50})
+for _ in range(3):
+    seen(mesos=1_000_000)
+check(f"the inventory seen: it starts, from those mesos and potions ({app.profit.start})", app.session.on
+      and app._start_text == "Pause" and app.profit.start == (1_000_000, {"red_potion": 50}))
+for _ in range(3):
+    seen(mesos=990_000, potions={"red_potion": 250})      # a repot: 200 Red Potions for 10,000
+app._update_display()
+check(f"a repot is no loss ({tile()})", tile() == "0")
+for _ in range(3):
+    seen(mesos=1_990_000, potions={"red_potion": 100})    # loot sold, 150 potions used
+app._update_display()
+details = app.view.details.itemcget(app.view.details._vals["Net profit"], "text")
+check(f"Net so far: what it made, less the potions used ({tile()}; {details})",
+      tile() == "+992,500" and details == "1,000,000 \u2192 1,990,000")
+app.meso.seen_at -= 10                                   # the inventory was closed since
+app.reset()
+app._update_display()
+root.update()
+check(f"Reset pauses and waits for the inventory again ({app.status.get()[:50]}...)", not app.session.on
+      and app.profit.waiting == "end" and "Open your inventory to finish" in app.status.get()
+      and tile() == "Open inventory")
+seen(mesos=1_990_000)
+app._update_display()
+logged = json.loads(m.PROFIT_LOG_PATH.read_text(encoding="utf-8"))["sessions"]
+check(f"the inventory seen: Net is saved to the profit log ({logged[-1]['net']}, {logged[-1]['potions']})",
+      len(logged) == 1 and logged[-1]["net"] == 992_500 and logged[-1]["mesos_start"] == 1_000_000
+      and logged[-1]["potions"] == {"red_potion": [50, 100]}
+      and m.PROFIT_LOG_TEXT_PATH.read_text(encoding="utf-8").strip().endswith("net +992,500"))
+check(f"...it says so, and is reset, the Net still shown ({app.status.get()[:40]}...)",
+      app.status.get().startswith("Session done. Net +992,500") and app._start_text == "Start"
+      and app.tracker.elapsed() == 0 and tile() == "+992,500")
+app.toggle()
+for _ in range(3):
+    seen(mesos=5_000)
+app.meso.seen_at -= 10
+app.reset()
+app.reset()
+check("Reset pressed again while it waits ends without a Net (nothing logged)",
+      not app.profit.started and app._start_text == "Start"
+      and len(json.loads(m.PROFIT_LOG_PATH.read_text(encoding="utf-8"))["sessions"]) == 1)
+app.toggle()
+for _ in range(3):
+    seen(mesos=5_000)
+app.meso.seen_at -= 10
+app.reset()
+app.toggle()
+check("...and Resume while it waits carries on instead", app.session.on and app.profit.started
+      and not app.profit.waiting)
+app.set_compact(True); root.update()
+check("the switch isn't in compact mode", not app.view.profit.winfo_ismapped())
+app.set_compact(False); root.update()
+app.view.profit.toggle()
+app._update_display()
+check("switched off: Profit / hr again", label() == "PROFIT / HR" and not app.cfg["full_profit"]
+      and not app.profit.started)
+app.session.reset()
+if fake_elapsed:
+    app.tracker.elapsed = fake_elapsed
+
 # ---- the low-potion sound: each potion used once it's down to "Warn at" (15 to start with)
 beeps, real_sound = [], m.PLATFORM.play_sound
 m.PLATFORM.play_sound = lambda wav: (beeps.append(wav), True)[1]

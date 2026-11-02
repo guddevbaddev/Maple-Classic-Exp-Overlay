@@ -536,6 +536,44 @@ for v in (10030,) * 2:
     t.observe(v, 90, 30, True)
 check("mesos picked up after resuming still count", t.value == 10030 and t.gained == 10)
 
+# ---- Full profit / loss: the mesos counted at the start and the end, and Net is the difference
+mt, pc = m.MesoTracker(), m.ProfitCount()
+check("no Net before anything is counted", pc.net({}) is None and not pc.started)
+pc.ask("start", 100)
+check("an old count (the inventory closed a while ago) isn't a look at it now", pc.fresh(mt, 100) is None)
+for v in (1_000_000,) * 3:
+    mt.observe(v, 90, 0, False)
+check("...a count from 10 s before isn't either", pc.fresh(mt, 100) is None)
+mt.observe(1_000_000, 101, 0, False)
+check("a count read once it was asked for is", pc.fresh(mt, 101) == 1_000_000)
+check("...and is taken as the start", pc.take(1_000_000, {"red_potion": 50}) == "start"
+      and pc.started and pc.waiting is None)
+# a repot: 200 Red Potions for 10,000 mesos, then 150 used and 1,000,000 made (drops, loot sold)
+prices = {"red_potion": 50}
+check(f"a repot is no loss on its own ({pc.net(prices, 990_000, {'red_potion': 250})})",
+      pc.net(prices, 990_000, {"red_potion": 250}) == (0, -10_000, 10_000))
+pc.ask("end", 500)
+check("the end count is taken as the end", pc.take(1_990_000, {"red_potion": 100}) == "end")
+check(f"Net: the mesos made, less the potions used ({pc.net(prices)})",
+      pc.net(prices) == (1_000_000 - 150 * 50, 990_000, 2_500))
+check("a potion with no price, or not seen at both ends, doesn't count",
+      pc.net({}, 1_000_500, {"red_potion": 0, "elixir": 9}) == (500, 500, 0))
+check("a new start clears the last session's end and result",
+      (pc.ask("start", 900), pc.take(5, {}), pc.end, pc.result)[2:] == (None, None) and pc.start == (5, {}))
+check("Net reads well", [m.fmt_signed(n) for n in (404_800, -7_500, 0)] == ["+404,800", "-7,500", "0"])
+entry = {"date": "2026-11-02", "map": "Rocky Road II", "class": "Bandit", "level_start": 27, "level_end": 28,
+         "seconds": 3900, "mesos_start": 1_200_000, "mesos_end": 1_612_300, "potions_worth": -7_500, "net": 404_800}
+check(f"a profit log line says it all ({m.format_profit(entry)})", m.format_profit(entry) ==
+      "Nov 2nd, 2026 - Rocky Road II - Lv 27-28 - Bandit - 1 h 05 min - 1,200,000 -> 1,612,300 mesos (+412,300)"
+      " - potions -7,500 - net +404,800")
+pl = Path(tempfile.mkdtemp()) / "profit_log.json"
+pt = pl.with_suffix(".txt")
+m.save_profit(entry, pl, pt)
+m.save_profit({**entry, "date": "2026-11-03", "net": -1}, pl, pt)
+saved = json.loads(pl.read_text(encoding="utf-8"))["sessions"]
+check("sessions are added to the profit log, and its text copy is newest first",
+      [e["net"] for e in saved] == [404_800, -1] and pt.read_text(encoding="utf-8").splitlines()[0].startswith("Nov 3rd"))
+
 # ---- EXP outliers
 def exp_tracker(e=47850, p=50.0):
     tr = m.ExpTracker(); tr.start()
