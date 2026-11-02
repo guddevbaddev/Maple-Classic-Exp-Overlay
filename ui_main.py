@@ -379,8 +379,12 @@ class Tile(tk.Canvas):
         self._photo = g.photo(g.panel(g.px(width), g.px(62), 13, "#191c25", "#13151b", 0.09))
         self.create_image(0, 0, anchor="nw", image=self._photo)
         self.pad = 13
-        self.create_text(g.px(self.pad), g.px(12), anchor="nw", text=label.upper(), fill=TEXT_DIM, font=theme.font("semibold", 9))
+        self._label = self.create_text(g.px(self.pad), g.px(12), anchor="nw", text=label.upper(), fill=TEXT_DIM,
+                                       font=theme.font("semibold", 9))
         self._v = self.create_text(g.px(self.pad), g.px(29), anchor="nw", text="—", fill=TEXT, font=theme.font("bold", 17))
+
+    def set_label(self, label):
+        self.itemconfigure(self._label, text=label.upper())
 
     def set(self, value):
         if self.itemcget(self._v, "text") != value:
@@ -562,7 +566,7 @@ class Message(tk.Label):
 class MainView(tk.Frame):
     """Everything in the main window, top to bottom."""
 
-    def __init__(self, parent, theme, cb, details=False, bg=INK, version=""):
+    def __init__(self, parent, theme, cb, details=False, bg=INK, version="", profit=False):
         super().__init__(parent, bg=bg)
         self.t, self.cb, g = theme, cb, theme.gfx
         self.columnconfigure(0, weight=1, minsize=g.px(W))
@@ -581,6 +585,11 @@ class MainView(tk.Frame):
         self.log_btn = Button(icons, theme, icon="list", kind="ghost", width=34, height=34, radius=10, command=cb["log"], tip="Open the log", bg=bg)
         for b in (self.log_btn, self.compact_btn, self.settings_btn):
             b.pack(side="left", padx=(2, 0))
+        # Full profit / loss: the mesos read at Start and at Reset, and Net is the difference
+        self.profit = Toggle(head, theme, "Full profit / loss", profit, cb.get("profit"), bg)
+        self.profit.grid(row=1, column=0, columnspan=2, sticky="w", pady=(g.px(8), 0))
+        Tip(self.profit, theme, "Counts your mesos when you Start and when you Reset (open your inventory "
+                                "both times): Net is the difference, with anything sold or bought in between")
 
         self.hero = Hero(self, theme, bg)
         self.hero.grid(row=1, column=0, padx=g.px(SIDE), pady=pad(0, 10))
@@ -615,7 +624,7 @@ class MainView(tk.Frame):
         self.details_open = details
         self.details = Details(self, theme, ("% / hr", "% last 5 min", "% last 15 min", "% last 30 min",
                                              "% last hour", "Gained", "Current", "Mesos", "Mesos / 5 min",
-                                             "Potions", "Profit / hr"), bg)
+                                             "Potions", "Profit / hr", "Net profit"), bg)
         self.details.grid(row=5, column=0, padx=g.px(SIDE), pady=pad(0, 8))
         if not details:
             self.details.grid_remove()
@@ -642,14 +651,20 @@ class MainView(tk.Frame):
         self.share_btn.grid(row=0, column=1, sticky="e")
         self.message = Message(self, theme, bg)
         self.message.grid(row=8, column=0, padx=g.px(SIDE + 2), pady=pad(2, 14 if not version else 4), sticky="we")
-        self.foot_widgets = [self.tiles_row, self.potions_row, self.more_btn, self.details, self.reset_btn,
-                             self.menu_btn, foot]
+        self.foot_widgets = [self.profit, self.tiles_row, self.potions_row, self.more_btn, self.details,
+                             self.reset_btn, self.menu_btn, foot]
+        self.set_profit(profit)
         if version:                       # which version this is, small, at the very bottom
             self.version = tk.Label(self, text=version, bg=bg, fg=TEXT_FAINT, font=theme.font("regular", 9), anchor="e")
             self.version.grid(row=9, column=0, padx=g.px(SIDE + 2), pady=pad(0, 10), sticky="we")
             self.foot_widgets.append(self.version)
 
     # ---- showing things
+    def set_profit(self, on):
+        """Full profit / loss on: the profit tile shows the session's Net instead of Profit / hr."""
+        self.profit.set(on)
+        self.tiles["Profit / hr"].set_label("Net profit" if on else "Profit / hr")
+
     def show(self, **m):
         """rate, delta, spark, pct, eta (hero); tiles, details, potions (dicts); state, state_text, message."""
         hero = {k: m[k] for k in ("rate", "delta", "spark", "pct", "eta", "mesos") if k in m}

@@ -39,7 +39,7 @@ import urllib.parse
 import urllib.request
 import webbrowser
 from collections import Counter, deque, namedtuple
-from datetime import date
+from datetime import date, datetime
 from difflib import SequenceMatcher
 from pathlib import Path
 from tkinter import font as tkfont, messagebox, simpledialog, ttk
@@ -67,7 +67,7 @@ PLATFORM = create_platform()
 PLATFORM.setup_process()
 cv2.setNumThreads(1)
 
-VERSION = "0.9.28-beta"
+VERSION = "0.9.29-beta"
 WINDOW_TITLE = "Maple Classic Exp Overlay"    # the version is shown at the bottom, and in Settings
 OLD_TITLES = ("Maple EXP/hr",)               # what versions before 0.9.3 were called
 
@@ -109,7 +109,8 @@ DEFAULTS = {"gap_seconds": 120, "transparency": 0, "topmost": True,
             "check_updates": True, "skip_version": "", "ui_scale": 100, "compact": False, "hotkeys_on": True,
             "details": False, "level": 0, "auto_pause": True,       # level: for a bar that shows only the % (0: unknown)
             "low_potion_alert": True, "low_potions": 15,            # a sound for each one used once a potion is down to this
-            "alert_volume": 70}                                     # %: how loud that sound is
+            "alert_volume": 70,                                     # %: how loud that sound is
+            "full_profit": False}                                   # the Full profit / loss switch
 # Settings > Size, in %: only these, so the window can't get too small to read or use.
 UI_SCALES = (60, 70, 80, 90, 100, 110, 125, 150, 175, 200)
 MAX_TRANSPARENCY = 40       # %: more and the window can fade out of sight, with Settings in it
@@ -2143,6 +2144,121 @@ class MesoTracker:
         return (self.gained - before) / (elapsed - t0) * ROLLING_WINDOW
 
 
+def fmt_signed(n):
+    """'+12,300' / '-4,050' / '0'."""
+    return f"{'+' if n > 0 else '-' if n < 0 else ''}{abs(n):,.0f}"
+
+
+class ProfitCount:
+    """Full profit / loss (the switch at the top): your mesos read at Start and again when the
+    session ends, and the difference is what it made or lost, whatever happened in between: drops,
+    etc and equips sold, potions bought. The quickslot's potions are counted at both ends too, at
+    their prices, so potions bought and not used yet aren't a loss.
+
+    The two counts need a look at the inventory made after they were asked for: `waiting` is
+    "start" (Start was pressed, the session starts with it) or "end" (Reset was pressed: the session
+    ends with it), and `asked_at` is when. After the end count, `result` is the session's Net.
+    """
+    FRESH = 3           # seconds: a mesos count read this recently is a look at the inventory now
+
+    def __init__(self):
+        self.clear()
+
+    def clear(self):
+        self.waiting = None         # None, "start" or "end"
+        self.asked_at = None
+        self.start = None           # (mesos, {potion: count}) at the start
+        self.end = None             # ...and at the end
+        self.result = None          # the finished session's Net, until the next one starts
+
+    def ask(self, what, now):
+        self.waiting, self.asked_at = what, now
+
+    @property
+    def started(self):
+        return self.start is not None
+
+    def fresh(self, meso, now):
+        """The mesos count, if it was read when the count was asked for (or since)."""
+        if meso.value is None or meso.seen_at is None:
+            return None
+        asked = self.asked_at if self.asked_at is not None else now
+        return meso.value if meso.seen_at >= asked - self.FRESH else None
+
+    def take(self, mesos, counts):
+        """Takes the count asked for. Returns "start" or "end" (the one taken)."""
+        what, self.waiting, self.asked_at = self.waiting, None, None
+        snap = (mesos, dict(counts))
+        if what == "end":
+            self.end = snap
+        else:
+            self.start, self.end, self.result = snap, None, None
+        return what
+
+    def net(self, prices, mesos=None, counts=None):
+        """(Net, mesos change, potions' worth change): from the start to the end, or to `mesos`
+        and `counts` now. Only potions counted at both ends are counted."""
+        if self.start is None:
+            return None
+        if mesos is None:
+            if self.end is None:
+                return None
+            mesos, counts = self.end
+        m0, c0 = self.start
+        potions = sum((counts[k] - c0[k]) * prices.get(k, 0) for k in c0 if k in (counts or {}))
+        return mesos - m0 + potions, mesos - m0, potions
+
+
+PROFIT_LOG_PATH = DATA_DIR / "profit_log.json"
+PROFIT_LOG_TEXT_PATH = DATA_DIR / "profit_log.txt"
+
+
+def format_profit(e):
+    """e.g. 'Nov 2nd, 2026 - Rocky Road II - Lv 27-28 - Bandit - 1 h 05 min - 1,200,000 -> 1,612,300
+    mesos - potions -7,500 - net +404,800'"""
+    d = date.fromisoformat(e["date"])
+    lv = lambda v: "?" if v is None else v
+    levels = (f"Lv {lv(e.get('level_start'))}" if e.get("level_start") == e.get("level_end")
+              else f"Lv {lv(e.get('level_start'))}-{lv(e.get('level_end'))}")
+    parts = [f"{MONTHS[d.month - 1]} {_ordinal(d.day)}, {d.year}", e.get("map") or "?", levels]
+    if e.get("class"):
+        parts.append(e["class"])
+    parts += [fmt_logged(e.get("seconds", 0)),
+              f"{e['mesos_start']:,} -> {e['mesos_end']:,} mesos ({fmt_signed(e['mesos_end'] - e['mesos_start'])})"]
+    if e.get("potions_worth"):
+        parts.append(f"potions {fmt_signed(e['potions_worth'])}")
+    parts.append(f"net {fmt_signed(e['net'])}")
+    return " - ".join(parts)
+
+
+def save_profit(entry, path=PROFIT_LOG_PATH, text_path=PROFIT_LOG_TEXT_PATH):
+    """Adds a finished session's full profit / loss to profit_log.json (and its text copy, newest
+    first). Returns False if it couldn't be saved."""
+    try:
+        try:
+            entries = json.loads(path.read_text(encoding="utf-8")).get("sessions", [])
+        except FileNotFoundError:
+            entries = []
+        if not isinstance(entries, list):
+            entries = []
+        entries.append(entry)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"sessions": entries}, indent=1), encoding="utf-8")
+        os.replace(tmp, path)
+        lines = []
+        for e in reversed(entries):
+            try:
+                lines.append(format_profit(e) + "\n")
+            except Exception:
+                pass                                # (a line edited by hand that doesn't add up)
+        text_path.write_text("".join(lines), encoding="utf-8")
+        return True
+    except Exception as e:
+        log_error("saving the profit log", e)
+        return False
+
+
 class Session:
     """What's on screen: EXP, mesos and potions since Start, until Reset (or the overlay closes).
 
@@ -2879,6 +2995,8 @@ class App:
         self.party = 1
         self._party_seen = (None, 0)
         self.last_mesos = None
+        self.profit = ProfitCount()         # Full profit / loss: the mesos at the start and the end
+        self.profit_note = None             # (what the last finished one made, when)
         self.rejected = 0
         self.started, self.cpu0 = time.monotonic(), time.process_time()
         self.recent, self.health = Recent(40, self.started, sink=log_activity), Health()   # for bug reports
@@ -2972,9 +3090,9 @@ class App:
         callbacks = dict(settings=self.open_settings, compact=lambda: self.set_compact(not self.compact),
                          log=self.toggle_log, start=self.toggle, reset=self.reset, logging=self._logging_clicked,
                          menu=self._open_menu, share=self.share_card, details=self._details_changed,
-                         potions=self.open_found_potions)
+                         potions=self.open_found_potions, profit=self.set_full_profit)
         self.view = self.main = MainView(self.root, self.theme, callbacks, details=bool(self.cfg.get("details")),
-                                         version=f"v{VERSION}")
+                                         version=f"v{VERSION}", profit=self.cfg["full_profit"])
         self.view.grid(row=0, column=0, sticky="n")
         if self.compact:
             self.view.set_compact(True)
@@ -4161,6 +4279,8 @@ class App:
             self.meso.observe(r.mesos, now, t.elapsed(), self.session.on)   # (paused by itself too)
             if had is None and self.meso.value is not None:
                 log_activity(f"Mesos read: {fmt_num(self.meso.value)}")
+        if self.profit.waiting:
+            self._profit_look(now)
         if r.potions is not None:
             had = self.potions.seen
             self.session.potions_seen(r.potions)
@@ -4228,6 +4348,7 @@ class App:
             status = r.where
         if self.note:
             status += f"\n{self.note}"
+        status = self._profit_status(now) or status
         self.status.set(status)
         self.recent.add(status)
         self.level = level_for_req(t.req) or self.level
@@ -4388,6 +4509,105 @@ class App:
             return None
         return (m.gained - p.net(self.potion_prices(), self.found_keys())) / el * 3600
 
+    # ---- Full profit / loss (the switch at the top)
+    def set_full_profit(self, on):
+        """The Full profit / loss switch. On, Start waits for a look at the inventory's mesos and
+        Reset does too, and the session's Net is the difference (see ProfitCount)."""
+        self.cfg["full_profit"] = on
+        save_config(self.cfg)
+        self.view.set_profit(on)
+        now = time.monotonic()
+        self.profit.clear()
+        self.profit_note = None
+        log_activity(f"Full profit / loss {'on' if on else 'off'}")
+        if not on:
+            if self._start_text == "Cancel":
+                self._set_start("Start")
+            self.status.set("Full profit / loss off: the tile shows Profit / hr again.")
+        elif self.session.on or self.tracker.elapsed() > 0:      # a session going on: it counts from now
+            if not self._profit_look(now, "start"):
+                self.status.set(self._profit_status(now))
+        else:
+            self.status.set("Full profit / loss on: when you press Start, open your inventory so your mesos "
+                            "can be read, and again when you press Reset to finish. Net is the difference.")
+
+    def _profit_look(self, now, ask=None):
+        """Asks for a count of the inventory's mesos (ask: "start" or "end") and takes the one asked
+        for once they were read just now. Returns True when it's taken."""
+        p = self.profit
+        if ask:
+            p.ask(ask, now)
+        mesos = p.fresh(self.meso, now)
+        if mesos is None:
+            return False
+        if p.take(mesos, self.potions.counts) == "start":
+            self._profit_began = (datetime.now().isoformat(timespec="seconds"), self.level)
+            log_activity(f"Full profit / loss: starting with {fmt_num(mesos)} mesos")
+            self.profit_note = (f"Started with {fmt_num(mesos)} mesos. When you're done, press Reset "
+                                "with your inventory open to see your Net.", now)
+            if self._start_text == "Cancel":          # Start was waiting for this
+                self._toggle()
+        else:
+            self._profit_finish(now)
+        return True
+
+    def _profit_finish(self, now):
+        """The last count is in: the session's Net, saved to the profit log, then Reset."""
+        p = self.profit
+        net, mesos, potions = p.net(self.potion_prices())
+        p.result = net
+        began, level = getattr(self, "_profit_began", (None, None))
+        entry = {"date": date.today().isoformat(), "started": began,
+                 "ended": datetime.now().isoformat(timespec="seconds"),
+                 "map": PQ_MAP if self.pq_mode else (self.session.map or self.map_name), "class": self.job,
+                 "level_start": level, "level_end": self.level, "seconds": round(self.tracker.elapsed()),
+                 "mesos_start": p.start[0], "mesos_end": p.end[0],
+                 "potions": {k: [n, p.end[1][k]] for k, n in p.start[1].items() if k in p.end[1]},
+                 "potions_worth": potions, "net": net}
+        saved = save_profit(entry)
+        log_activity(f"Full profit / loss: {fmt_num(p.start[0])} -> {fmt_num(p.end[0])} mesos, "
+                     f"potions {fmt_signed(potions)}, net {fmt_signed(net)}")
+        self._reset()
+        self.profit_note = (f"Session done. Net {fmt_signed(net)} mesos: {fmt_num(p.start[0])} → "
+                            f"{fmt_num(p.end[0])}" + (f", potions {fmt_signed(potions)}" if potions else "")
+                            + ("." if saved else ". (It couldn't be saved to the profit log.)"), now)
+        self.status.set(self.profit_note[0])
+
+    def _profit_status(self, now):
+        """What the status line says for Full profit / loss, or None."""
+        p = self.profit
+        if p.waiting:
+            if self.reader.mesos_covered:
+                return "Full profit / loss: this window is covering the inventory's mesos. Move it a little."
+            if p.waiting == "start":
+                return ("Full profit / loss: open your inventory so your mesos can be read. Tracking starts "
+                        "as soon as they are (or press Cancel)." if self._start_text == "Cancel" else
+                        "Full profit / loss: open your inventory so your mesos can be read. Net counts from then.")
+            return ("Open your inventory to finish: Net is your mesos now less the ones you started with. "
+                    "(Resume: carry on. Reset again: end without a Net.)")
+        if self.profit_note and now - self.profit_note[1] < 20:
+            return self.profit_note[0]
+        return None
+
+    def _net_text(self):
+        """The Net profit tile: what the session made so far (or in all, once it's done)."""
+        p = self.profit
+        if p.waiting:
+            return "Open inventory"
+        if p.result is not None:
+            return fmt_signed(p.result)
+        if p.started and self.meso.value is not None:
+            return fmt_signed(p.net(self.potion_prices(), self.meso.value, self.potions.counts)[0])
+        return "\u2014"
+
+    def _net_detail(self):
+        """Details' Net profit line: the mesos it started with, and now (or at the end)."""
+        p = self.profit
+        if not p.started:
+            return "\u2014"
+        now = p.end[0] if p.end else self.meso.value
+        return f"{fmt_num(p.start[0])} \u2192 {fmt_num(now)}" if now is not None else fmt_num(p.start[0])
+
     def _log_tick(self, now):
         if not self.tracker.running or self.skip_log:
             return
@@ -4457,13 +4677,15 @@ class App:
             eta=f"Lv {level + 1} in {eta}" if level and eta else f"Lv {level}" if level else "",
             mesos=fmt_num(m.per_hour(el)),
             tiles={"Last 5 min": fmt_num(rolling), "Mesos / hr": fmt_num(m.per_hour(el)),
-                   "Profit / hr": fmt_num(self._profit_rate(el)), "Elapsed": fmt_dur(el)},
+                   "Profit / hr": self._net_text() if self.cfg["full_profit"] else fmt_num(self._profit_rate(el)),
+                   "Elapsed": fmt_dur(el)},
             details={"% / hr": f"{rate / t.req * 100:.2f}%" if rate and t.req else "\u2014",
                      **{name: fmt_pct_gained(t.pct_in_last(sec), sec) for sec, name in PCT_WINDOWS},
                      "Gained": f"{fmt_short(t.gained)}{f'  (+{t.levels} lvl)' if t.levels else ''}",
                      "Current": f"{fmt_num(shown[0])} [{shown[1]:.2f}%]" if shown else "\u2014",
                      "Mesos": mesos, "Mesos / 5 min": fmt_num(m.per_5min(el)),
-                     "Potions": self._potions_text(), "Profit / hr": fmt_num(self._profit_rate(el))},
+                     "Potions": self._potions_text(), "Profit / hr": fmt_num(self._profit_rate(el)),
+                     **({"Net profit": self._net_detail()} if self.cfg["full_profit"] else {})},
             potions=self._potion_tiles(), state=state, state_text=state_text)
         waiting = self.session.waiting
         self.session.tick(now)
@@ -4492,6 +4714,23 @@ class App:
         self.status.set(self.hotkey_note[0])
 
     def toggle(self):
+        if self.profit.waiting == "start" and self._start_text == "Cancel":   # waiting for the inventory: cancel
+            self.profit.waiting = None
+            self.recent.add("You cancelled Start (no mesos count)")
+            self._set_start("Start" if self.tracker.elapsed() == 0 else "Resume")
+            self.status.set("Not started.")
+            return
+        if self.profit.waiting == "end":        # Start while waiting to finish: carry on instead
+            self.profit.waiting = None
+            self.recent.add("You carried on (not finishing)")
+        elif (not self.session.on and self.cfg["full_profit"] and not self.profit.started
+              and not self._profit_look(time.monotonic(), "start")):
+            self._set_start("Cancel")             # starts when the inventory is seen (_profit_look)
+            self.status.set(self._profit_status(time.monotonic()))
+            return
+        self._toggle()
+
+    def _toggle(self):
         if self.session.on:                     # (also while it's paused by itself)
             self.recent.add("You paused")
             self.session.pause()
@@ -4512,6 +4751,23 @@ class App:
                                 kind="secondary" if text == "Pause" else "primary")
 
     def reset(self):
+        p = self.profit
+        if p.waiting == "end":                  # pressed again while waiting: end without the last count
+            self.recent.add("You ended without the last mesos count")
+            self.profit.clear()
+            self._reset()
+            self.status.set("Reset, without the last mesos count: no Net for that session.")
+            return
+        if self.cfg["full_profit"] and p.started and p.end is None:
+            if self.session.on:
+                self._toggle()                    # paused while it waits for the inventory
+            if not self._profit_look(time.monotonic(), "end"):
+                self.status.set(self._profit_status(time.monotonic()))
+            return
+        self.profit.clear()
+        self._reset()
+
+    def _reset(self):
         self.session.reset()
         self.low_counts = {}
         self.autolog.reset_clock()

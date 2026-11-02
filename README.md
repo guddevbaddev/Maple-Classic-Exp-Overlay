@@ -124,6 +124,17 @@ The overlay reads the **count on each quickslot key** that has a potion on it (l
 
 It knows the Red, Orange, White and Blue Potions, the Elixirs, and the foods NPC shops sell (Apple, Meat, Lemon, Hamburger, Pure Water and the rest: the list is in ⚙ > Potion prices). A potion only on the inventory's Use tab, not on a quickslot key, isn't counted. **This is new:** if it gets a count wrong, please send a screenshot (PNG) of the game with your quickslot in a [bug report](../../issues).
 
+### Full profit / loss
+
+**Profit / hr** is worked out as you go, so buying potions in the middle of a session, or selling loot, can throw it off. For what a whole session really made, turn on **Full profit / loss** (the switch at the top):
+
+- **Start** waits until it reads your mesos: open your inventory (if it's open already, it starts right away). Press it again to cancel.
+- **Reset** ends the session: it pauses and waits for your inventory again, then shows your **Net**: your mesos at the end less the ones you started with. Anything in between counts: drops, etc and equips sold, potions bought. Press **Resume** to carry on instead, or **Reset** again to end without a Net.
+- **Potions on your quickslot** are counted at both ends too, at their prices, so a repot isn't a loss: only the potions you used are.
+- The profit tile becomes **Net profit** (what you've made so far), and **Details** shows your mesos at the start and now.
+- Each finished session goes in **profit_log.json** (and **profit_log.txt**, newest first) in the data folder, e.g. `Nov 2nd, 2026 - Rocky Road II - Lv 27-28 - Bandit - 1 h 05 min - 1,200,000 -> 1,612,300 mesos (+412,300) - potions -7,500 - net +404,800`.
+- Mesos put in (or taken out of) storage, or traded, count too, so leave those for after the session.
+
 ### High levels: an EXP bar with only a %
 
 From about level 58 the game stops showing the EXP number and shows only the %, like `EXP. [88.50%]`. The overlay reads that too. The % alone doesn't say how much EXP that is, so the first time it sees it, it asks **what level you are** (if it saw your level before the number went away, it already knows and doesn't ask). From then on:
