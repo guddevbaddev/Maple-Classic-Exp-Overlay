@@ -736,7 +736,7 @@ for _ in range(3):
     seen(mesos=1_990_000, potions={"red_potion": 100})    # loot sold, 150 potions used
 app._update_display()
 details = app.view.details.itemcget(app.view.details._vals["Net profit"], "text")
-check(f"Net so far: what it made, less the potions used ({tile()}; {details})",
+check(f"Net so far: what it made, less the potions used ({tile()}; {details.replace(chr(0x2192), '->')})",   # (a Windows console can't print the arrow)
       tile() == "+992,500" and details == "1,000,000 \u2192 1,990,000")
 app.meso.seen_at -= 10                                   # the inventory was closed since
 app.reset()

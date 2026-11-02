@@ -6,6 +6,8 @@
 # - the tag is on main's history (built from what was merged, nothing else);
 # - the draft has the Windows zip, the Mac zip and SHA256SUMS.txt, and each zip's SHA-256 is
 #   the one SHA256SUMS.txt lists (what Update now checks before installing anything);
+#   with "windows_only" ticked, just the Windows zip (for when the Mac build can't be made yet:
+#   on a Mac, Update now then says there's no download for it, until it's added by hand);
 # - the draft's notes still say "(Notes to come.)": they're replaced with that version's part of
 #   CHANGELOG.md, at the tag. Notes someone already wrote are kept as they are.
 # A release that's already published is never changed from here.
@@ -20,6 +22,10 @@ on:
         description: "The release to publish (the draft's tag, e.g. v0.9.19-beta)"
         type: string
         required: true
+      windows_only:
+        description: "Publish without the Mac zip (the Mac build isn't ready). Mac players can't update until it's added."
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -32,6 +38,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ inputs.tag }}
+      WINDOWS_ONLY: ${{ inputs.windows_only }}
     steps:
       - name: The tag looks like a version
         shell: bash
@@ -66,24 +73,31 @@ jobs:
           fi
           win="Maple-Classic-Exp-Overlay-$TAG.zip"
           mac="Maple-Classic-Exp-Overlay-$TAG-mac.zip"
+          zips=("$win" "$mac")
+          if [ "$WINDOWS_ONLY" = "true" ]; then
+            zips=("$win")
+            echo "::warning::Publishing $TAG without the Mac zip (windows_only): on a Mac, Update now finds no download for it."
+          fi
           assets=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
-          for name in "$win" "$mac" SHA256SUMS.txt; do
+          for name in "${zips[@]}" SHA256SUMS.txt; do
             if ! grep -qxF "$name" <<< "$assets"; then
               echo "::error::The draft has no $name yet (it has: $(echo $assets)). Wait for Build to finish, or run its Mac job again."
               exit 1
             fi
           done
           mkdir check
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir check \
-            --pattern "$win" --pattern "$mac" --pattern SHA256SUMS.txt
+          patterns=()
+          for name in "${zips[@]}"; do patterns+=(--pattern "$name"); done
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --dir check "${patterns[@]}" --pattern SHA256SUMS.txt
           cd check
-          for name in "$win" "$mac"; do
+          for name in "${zips[@]}"; do
             if ! grep -q " \*\?$name\$" SHA256SUMS.txt; then
               echo "::error::SHA256SUMS.txt doesn't list $name, so Update now couldn't check it."
               exit 1
             fi
           done
-          sha256sum -c SHA256SUMS.txt
+          # (windows_only: the Mac zip, if SHA256SUMS.txt lists it, isn't here to check)
+          sha256sum -c $([ "$WINDOWS_ONLY" = "true" ] && echo --ignore-missing) SHA256SUMS.txt
       - name: Notes from CHANGELOG.md, if none were written
         shell: bash
         run: |
